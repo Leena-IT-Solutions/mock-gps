@@ -79,8 +79,10 @@ class MainActivity : AppCompatActivity() {
         askRequiredPermissions()
         setupModeSwitching()
         setupListeners()
+        updateUiState(false, false)
         setupMapWebView()
     }
+
 
     override fun onResume() {
         super.onResume()
@@ -262,6 +264,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnStartMock.setOnClickListener {
+            if (isMockRunning) return@setOnClickListener
             if (isRouteMode) {
                 startRouteMockService()
             } else {
@@ -270,6 +273,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnStopMock.setOnClickListener {
+            if (!isMockRunning) return@setOnClickListener
             stopMockService()
         }
 
@@ -412,12 +416,29 @@ class MainActivity : AppCompatActivity() {
             binding.tvStatusBadge.text = if (route) "ROUTE ACTIVE" else "ACTIVE"
             binding.tvStatusBadge.setBackgroundColor(Color.parseColor("#065F46"))
             binding.tvStatusBadge.setTextColor(Color.parseColor("#34D399"))
+
+            // Disable Start button
+            binding.btnStartMock.isEnabled = false
+            binding.btnStartMock.alpha = 0.40f
+
+            // Enable Stop button
+            binding.btnStopMock.isEnabled = true
+            binding.btnStopMock.alpha = 1.0f
         } else {
             binding.tvStatusBadge.text = "IDLE"
             binding.tvStatusBadge.setBackgroundColor(Color.parseColor("#334155"))
             binding.tvStatusBadge.setTextColor(Color.parseColor("#94A3B8"))
+
+            // Enable Start button
+            binding.btnStartMock.isEnabled = true
+            binding.btnStartMock.alpha = 1.0f
+
+            // Disable Stop button
+            binding.btnStopMock.isEnabled = false
+            binding.btnStopMock.alpha = 0.40f
         }
     }
+
 
     private fun updateRouteProgress(
         progress: Int,
