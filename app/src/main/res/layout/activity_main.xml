@@ -4,11 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_dark"
-    android:fitsSystemWindows="true"
-    android:orientation="vertical"
-    android:paddingHorizontal="16dp"
-    android:paddingTop="12dp"
-    android:paddingBottom="20dp">
+    android:orientation="vertical">
 
     <!-- App Header -->
     <LinearLayout
@@ -298,6 +294,7 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
         android:orientation="horizontal">
 
         <com.google.android.material.button.MaterialButton
