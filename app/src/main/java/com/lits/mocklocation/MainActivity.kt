@@ -185,13 +185,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
     private fun setupMapWebView() {
-        binding.mapWebView.settings.javaScriptEnabled = true
-        binding.mapWebView.settings.domStorageEnabled = true
-        binding.mapWebView.settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; motorola edge 50 pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+        binding.mapWebView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            userAgentString = "Mozilla/5.0 (Linux; Android 14; motorola edge 50 pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+            setSupportZoom(false)
+            builtInZoomControls = false
+            displayZoomControls = false
+        }
         binding.mapWebView.webChromeClient = WebChromeClient()
         binding.mapWebView.webViewClient = WebViewClient()
+
+        binding.mapWebView.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN,
+                android.view.MotionEvent.ACTION_MOVE -> {
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                }
+                android.view.MotionEvent.ACTION_UP,
+                android.view.MotionEvent.ACTION_CANCEL -> {
+                    v.parent?.requestDisallowInterceptTouchEvent(false)
+                }
+            }
+            false
+        }
 
         binding.mapWebView.addJavascriptInterface(object {
             @JavascriptInterface
@@ -216,7 +235,7 @@ class MainActivity : AppCompatActivity() {
             <head>
                 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
                 <style>
-                    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0f172a; }
+                    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0f172a; overflow: hidden; }
                     #pac-input {
                         background-color: #1e293b;
                         color: #ffffff;
@@ -258,14 +277,50 @@ class MainActivity : AppCompatActivity() {
                         color: #38bdf8 !important;
                         font-weight: bold !important;
                     }
+                    .map-controls-group {
+                        position: absolute;
+                        right: 14px;
+                        bottom: 30px;
+                        display: flex;
+                        flex-direction: column;
+                        z-index: 9999;
+                    }
+                    .map-float-btn {
+                        width: 44px;
+                        height: 44px;
+                        background: #1e293b;
+                        border: 1.5px solid #475569;
+                        border-radius: 12px;
+                        color: #ffffff;
+                        font-size: 22px;
+                        font-weight: bold;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        box-shadow: 0 6px 16px rgba(0,0,0,0.6);
+                        margin-bottom: 8px;
+                        cursor: pointer;
+                        user-select: none;
+                        -webkit-user-select: none;
+                    }
+                    .map-float-btn:active {
+                        background: #334155;
+                        transform: scale(0.92);
+                    }
                 </style>
                 <script src="https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places"></script>
             </head>
             <body>
                 <input id="pac-input" type="text" placeholder="🔍 Search place or address..." />
                 <div id="map"></div>
+                <div class="map-controls-group">
+                    <div class="map-float-btn" onclick="zoomIn()">+</div>
+                    <div class="map-float-btn" onclick="zoomOut()">−</div>
+                    <div class="map-float-btn" onclick="recenterMarker()" style="font-size: 18px;">🎯</div>
+                </div>
                 <script>
                     var map, marker;
+                    var isDragging = false;
 
                     function initMap() {
                         var startPos = { lat: $initialLat, lng: $initialLng };
@@ -275,6 +330,7 @@ class MainActivity : AppCompatActivity() {
                             disableDefaultUI: true,
                             clickableIcons: false,
                             gestureHandling: 'greedy',
+                            draggable: true,
                             styles: [
                                 { "elementType": "geometry", "stylers": [{ "color": "#242f3e" }] },
                                 { "elementType": "labels.text.fill", "stylers": [{ "color": "#746855" }] },
@@ -304,7 +360,18 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
 
+                        map.addListener('dragstart', function() {
+                            isDragging = true;
+                        });
+
+                        map.addListener('dragend', function() {
+                            setTimeout(function() {
+                                isDragging = false;
+                            }, 150);
+                        });
+
                         map.addListener('click', function(e) {
+                            if (isDragging) return;
                             var lat = e.latLng.lat();
                             var lng = e.latLng.lng();
                             marker.setPosition(e.latLng);
@@ -338,6 +405,18 @@ class MainActivity : AppCompatActivity() {
                             var newPos = { lat: lat, lng: lng };
                             marker.setPosition(newPos);
                             map.panTo(newPos);
+                        };
+
+                        window.zoomIn = function() {
+                            map.setZoom(map.getZoom() + 1);
+                        };
+
+                        window.zoomOut = function() {
+                            map.setZoom(map.getZoom() - 1);
+                        };
+
+                        window.recenterMarker = function() {
+                            map.panTo(marker.getPosition());
                         };
                     }
 
