@@ -85,6 +85,9 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         checkMockLocationPermission()
+        checkBatteryOptimizationStatus()
+        syncStateWithRunningService()
+
         val filter = IntentFilter().apply {
             addAction(MockLocationService.ACTION_STATUS_CHANGED)
             addAction(MockLocationService.ACTION_ROUTE_PROGRESS)
@@ -102,6 +105,76 @@ class MainActivity : AppCompatActivity() {
         try {
             unregisterReceiver(statusReceiver)
         } catch (_: Exception) {}
+    }
+
+    private fun requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = android.net.Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                try {
+                    startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                } catch (e2: Exception) {
+                    Toast.makeText(this, "Please allow unrestricted battery in app settings", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun checkBatteryOptimizationStatus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            val isIgnoring = pm.isIgnoringBatteryOptimizations(packageName)
+            if (isIgnoring) {
+                binding.btnBatteryOptimization.text = "⚡ 24/7 ON"
+                binding.btnBatteryOptimization.setTextColor(Color.parseColor("#38BDF8"))
+                binding.cardBatteryWarning.visibility = android.view.View.GONE
+            } else {
+                binding.btnBatteryOptimization.text = "⚠️ 24/7 OFF"
+                binding.btnBatteryOptimization.setTextColor(Color.parseColor("#F59E0B"))
+                binding.cardBatteryWarning.visibility = android.view.View.VISIBLE
+            }
+        }
+    }
+
+    private fun syncStateWithRunningService() {
+        val prefs = getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
+        val isMocking = prefs.getBoolean(MockLocationService.KEY_IS_MOCKING, false) || MockLocationService.isRunning
+        val isRoute = prefs.getBoolean(MockLocationService.KEY_IS_ROUTE_MODE, false) || MockLocationService.isRouteRunning
+
+        if (isMocking) {
+            updateUiState(true, isRoute)
+            if (isRoute) {
+                switchMode(true)
+                if (RouteRepository.getPoints().isEmpty()) {
+                    RouteRepository.loadFromDisk(this)
+                }
+                RouteRepository.summary?.let {
+                    if (binding.etRouteFrom.text.isNullOrEmpty()) binding.etRouteFrom.setText(it.originName)
+                    if (binding.etRouteTo.text.isNullOrEmpty()) binding.etRouteTo.setText(it.destinationName)
+                }
+                val point = RouteRepository.getCurrentPoint()
+                val lat = point?.lat ?: MockLocationService.currentMockLat
+                val lng = point?.lng ?: MockLocationService.currentMockLng
+                val bearing = point?.bearing ?: MockLocationService.currentMockBearing
+                val speed = point?.speed ?: MockLocationService.currentMockSpeed
+                val reached = RouteRepository.hasReachedDestination()
+                val progress = RouteRepository.getProgressPercent()
+                updateRouteProgress(progress, lat, lng, bearing, speed, reached)
+            } else {
+                switchMode(false)
+                val lat = prefs.getFloat(MockLocationService.KEY_TARGET_LAT, 19.1989f).toDouble()
+                val lng = prefs.getFloat(MockLocationService.KEY_TARGET_LNG, 73.1918f).toDouble()
+                binding.etLatitude.setText(String.format(java.util.Locale.US, "%.6f", lat))
+                binding.etLongitude.setText(String.format(java.util.Locale.US, "%.6f", lng))
+                updateMapMarker(lat, lng)
+            }
+        } else {
+            updateUiState(false, isRouteMode)
+        }
     }
 
     private fun checkMockLocationPermission() {
@@ -172,6 +245,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupListeners() {
+        binding.btnBatteryOptimization.setOnClickListener {
+            requestBatteryOptimizationExemption()
+        }
+
+        binding.btnGrantBatteryExemption.setOnClickListener {
+            requestBatteryOptimizationExemption()
+        }
+
         binding.btnOpenDevSettings.setOnClickListener {
             try {
                 startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
@@ -371,7 +452,12 @@ class MainActivity : AppCompatActivity() {
             displayZoomControls = false
         }
         binding.mapWebView.webChromeClient = WebChromeClient()
-        binding.mapWebView.webViewClient = WebViewClient()
+        binding.mapWebView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                syncStateWithRunningService()
+            }
+        }
 
         binding.mapWebView.setOnTouchListener { v, event ->
             when (event.actionMasked) {

@@ -56,7 +56,70 @@
             android:textColor="@color/text_secondary"
             android:textSize="11sp"
             android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/btnBatteryOptimization"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:background="@drawable/ic_play"
+            android:backgroundTint="#1E293B"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="5dp"
+            android:text="⚡ 24/7 ON"
+            android:textColor="#38BDF8"
+            android:textSize="11sp"
+            android:textStyle="bold" />
     </LinearLayout>
+
+    <!-- Battery Optimization Warning (When 24/7 background run is restricted) -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardBatteryWarning"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:visibility="gone"
+        app:cardBackgroundColor="#172554"
+        app:cardCornerRadius="10dp"
+        app:strokeColor="#1E40AF"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="10dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔋 Enable 24/7 Background Run"
+                android:textColor="#93C5FD"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Allow Unrestricted battery so location mocking runs continuously when screen is off or app is closed."
+                android:textColor="#BFDBFE"
+                android:textSize="11sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnGrantBatteryExemption"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Allow 24/7 Background Run"
+                android:textColor="@color/white"
+                android:textSize="11sp"
+                app:backgroundTint="#2563EB"
+                app:cornerRadius="6dp" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
     <!-- Warning Banner (When mock app is not set in developer settings) -->
     <com.google.android.material.card.MaterialCardView
