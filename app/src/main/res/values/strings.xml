@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Mock GPS</string>
+    <string name="channel_name">Mock Location Service</string>
+    <string name="channel_desc">Active background mock location streaming</string>
+</resources>

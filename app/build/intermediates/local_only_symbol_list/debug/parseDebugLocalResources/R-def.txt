@@ -1,0 +1,35 @@
+R_DEF: Internal format may change without notice
+local
+color accent
+color bg_dark
+color border_color
+color danger
+color primary
+color primary_dark
+color surface_dark
+color text_primary
+color text_secondary
+color white
+drawable ic_launcher_foreground
+drawable ic_location
+drawable ic_play
+drawable ic_stop
+id btnOpenDevSettings
+id btnPresetAmbernath
+id btnPresetDelhi
+id btnPresetMumbai
+id btnPresetPune
+id btnPresetThane
+id btnStartMock
+id btnStopMock
+id cardWarning
+id etLatitude
+id etLongitude
+id mapWebView
+id tvStatusBadge
+layout activity_main
+mipmap ic_launcher
+string app_name
+string channel_desc
+string channel_name
+style Theme.LITSMockLocation
