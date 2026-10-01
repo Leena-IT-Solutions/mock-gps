@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/mainRootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_dark"
@@ -14,15 +15,15 @@
         android:orientation="horizontal">
 
         <ImageView
-            android:layout_width="38dp"
-            android:layout_height="38dp"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
             android:background="@drawable/ic_launcher_foreground"
             android:contentDescription="App Icon" />
 
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
+            android:layout_marginStart="10dp"
             android:layout_weight="1"
             android:orientation="vertical">
 
@@ -32,9 +33,10 @@
                 android:fontFamily="sans-serif-black"
                 android:text="LITS Mock GPS"
                 android:textColor="@color/text_primary"
-                android:textSize="20sp" />
+                android:textSize="18sp" />
 
             <TextView
+                android:id="@+id/tvHeaderSubtitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="100% Ad-Free • Background Service"
@@ -61,7 +63,7 @@
         android:id="@+id/cardWarning"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:visibility="gone"
         app:cardBackgroundColor="#2D1515"
         app:cardCornerRadius="10dp"
@@ -72,14 +74,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="12dp">
+            android:padding="10dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="⚠️ Mock Location Not Selected"
                 android:textColor="#FCA5A5"
-                android:textSize="13sp"
+                android:textSize="12sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -94,7 +96,7 @@
                 android:id="@+id/btnOpenDevSettings"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="4dp"
                 android:text="Open Developer Options"
                 android:textColor="@color/white"
                 android:textSize="11sp"
@@ -103,11 +105,53 @@
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Compact Coordinates & Presets Card -->
+    <!-- Mode Selector: Fixed Location vs Route Simulation -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:layout_marginTop="8dp"
+        android:background="@drawable/ic_play"
+        android:backgroundTint="#1E293B"
+        android:orientation="horizontal"
+        android:padding="3dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnModeFixed"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="📍 Fixed Pin"
+            android:textColor="@color/white"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            app:backgroundTint="#6366F1"
+            app:cornerRadius="8dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnModeRoute"
+            style="@style/Widget.Material3.Button.TextButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:text="🚗 Route Simulation"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            app:backgroundTint="@android:color/transparent"
+            app:cornerRadius="8dp" />
+    </LinearLayout>
+
+    <!-- Section 1: Fixed Coordinates & Presets Card -->
     <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardFixedSection"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
+        android:layout_marginTop="8dp"
         app:cardBackgroundColor="@color/surface_dark"
         app:cardCornerRadius="12dp"
         app:strokeColor="@color/border_color"
@@ -117,8 +161,8 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingHorizontal="14dp"
-            android:paddingVertical="10dp">
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="8dp">
 
             <!-- Inputs row -->
             <LinearLayout
@@ -129,7 +173,7 @@
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginEnd="6dp"
+                    android:layout_marginEnd="4dp"
                     android:layout_weight="1"
                     android:hint="Latitude"
                     android:textColorHint="@color/text_secondary"
@@ -145,7 +189,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal|numberSigned"
-                        android:paddingVertical="8dp"
+                        android:paddingVertical="6dp"
                         android:text="19.1989"
                         android:textColor="@color/text_primary"
                         android:textSize="13sp" />
@@ -154,7 +198,7 @@
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="6dp"
+                    android:layout_marginStart="4dp"
                     android:layout_weight="1"
                     android:hint="Longitude"
                     android:textColorHint="@color/text_secondary"
@@ -170,7 +214,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="numberDecimal|numberSigned"
-                        android:paddingVertical="8dp"
+                        android:paddingVertical="6dp"
                         android:text="73.1918"
                         android:textColor="@color/text_primary"
                         android:textSize="13sp" />
@@ -181,7 +225,7 @@
             <HorizontalScrollView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="6dp"
                 android:scrollbars="none">
 
                 <LinearLayout
@@ -193,11 +237,11 @@
                         android:id="@+id/btnPresetAmbernath"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="32dp"
-                        android:layout_marginEnd="6dp"
-                        android:insetBottom="0dp"
+                        android:layout_height="30dp"
+                        android:layout_marginEnd="4dp"
                         android:insetTop="0dp"
-                        android:paddingHorizontal="10dp"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="8dp"
                         android:text="Ambernath"
                         android:textSize="11sp" />
 
@@ -205,11 +249,11 @@
                         android:id="@+id/btnPresetMumbai"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="32dp"
-                        android:layout_marginEnd="6dp"
-                        android:insetBottom="0dp"
+                        android:layout_height="30dp"
+                        android:layout_marginEnd="4dp"
                         android:insetTop="0dp"
-                        android:paddingHorizontal="10dp"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="8dp"
                         android:text="Mumbai (BKC)"
                         android:textSize="11sp" />
 
@@ -217,11 +261,11 @@
                         android:id="@+id/btnPresetThane"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="32dp"
-                        android:layout_marginEnd="6dp"
-                        android:insetBottom="0dp"
+                        android:layout_height="30dp"
+                        android:layout_marginEnd="4dp"
                         android:insetTop="0dp"
-                        android:paddingHorizontal="10dp"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="8dp"
                         android:text="Thane"
                         android:textSize="11sp" />
 
@@ -229,11 +273,11 @@
                         android:id="@+id/btnPresetPune"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="32dp"
-                        android:layout_marginEnd="6dp"
-                        android:insetBottom="0dp"
+                        android:layout_height="30dp"
+                        android:layout_marginEnd="4dp"
                         android:insetTop="0dp"
-                        android:paddingHorizontal="10dp"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="8dp"
                         android:text="Pune"
                         android:textSize="11sp" />
 
@@ -241,24 +285,245 @@
                         android:id="@+id/btnPresetDelhi"
                         style="@style/Widget.Material3.Button.TonalButton"
                         android:layout_width="wrap_content"
-                        android:layout_height="32dp"
-                        android:insetBottom="0dp"
+                        android:layout_height="30dp"
                         android:insetTop="0dp"
-                        android:paddingHorizontal="10dp"
-                        android:text="Delhi (CP)"
+                        android:insetBottom="0dp"
+                        android:paddingHorizontal="8dp"
+                        android:text="Delhi"
                         android:textSize="11sp" />
                 </LinearLayout>
             </HorizontalScrollView>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Expanded Interactive Map Card (Takes all remaining screen height) -->
+    <!-- Section 2: Route Mocking Configuration Card (Hidden by default, shown in Route mode) -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardRouteSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:visibility="gone"
+        app:cardBackgroundColor="@color/surface_dark"
+        app:cardCornerRadius="12dp"
+        app:strokeColor="@color/border_color"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="8dp">
+
+            <!-- Origin & Destination Inputs with Swap button -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="🟢 From (Origin)"
+                        android:textColorHint="@color/text_secondary"
+                        app:boxBackgroundColor="#0F172A"
+                        app:boxCornerRadiusBottomEnd="6dp"
+                        app:boxCornerRadiusBottomStart="6dp"
+                        app:boxCornerRadiusTopEnd="6dp"
+                        app:boxCornerRadiusTopStart="6dp"
+                        app:boxStrokeColor="@color/accent">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etRouteFrom"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:paddingVertical="6dp"
+                            android:text="Ambernath, Maharashtra"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:hint="🔴 To (Destination)"
+                        android:textColorHint="@color/text_secondary"
+                        app:boxBackgroundColor="#0F172A"
+                        app:boxCornerRadiusBottomEnd="6dp"
+                        app:boxCornerRadiusBottomStart="6dp"
+                        app:boxCornerRadiusTopEnd="6dp"
+                        app:boxCornerRadiusTopStart="6dp"
+                        app:boxStrokeColor="@color/danger">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etRouteTo"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:paddingVertical="6dp"
+                            android:text="Thane West, Maharashtra"
+                            android:textColor="@color/text_primary"
+                            android:textSize="12sp" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnSwapRoute"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:layout_marginStart="8dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:padding="0dp"
+                    app:backgroundTint="#334155"
+                    app:cornerRadius="10dp"
+                    app:icon="@drawable/ic_swap"
+                    app:iconGravity="textStart"
+                    app:iconPadding="0dp"
+                    app:iconSize="20dp"
+                    app:iconTint="@color/white" />
+            </LinearLayout>
+
+            <!-- Duration Selection -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⏱ Duration:"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <HorizontalScrollView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDur5m"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="28dp"
+                            android:layout_marginEnd="4dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="8dp"
+                            android:text="5 min"
+                            android:textSize="10sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDur15m"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="28dp"
+                            android:layout_marginEnd="4dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="8dp"
+                            android:text="15 min"
+                            android:textSize="10sp"
+                            app:backgroundTint="#4F46E5" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDur30m"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="28dp"
+                            android:layout_marginEnd="4dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="8dp"
+                            android:text="30 min"
+                            android:textSize="10sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDur45m"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="28dp"
+                            android:layout_marginEnd="4dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="8dp"
+                            android:text="45 min"
+                            android:textSize="10sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDur60m"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="28dp"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="8dp"
+                            android:text="1 hr"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+                </HorizontalScrollView>
+            </LinearLayout>
+
+            <!-- Route Summary & Calculate Button -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/tvRouteSummary"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Distance: -- • Avg Speed: --"
+                    android:textColor="#38BDF8"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnBuildRoute"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="10dp"
+                    android:text="Build Route"
+                    android:textColor="@color/white"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    app:backgroundTint="#6366F1"
+                    app:cornerRadius="6dp" />
+            </LinearLayout>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Expanded Interactive Map Card -->
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/cardMapContainer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_marginTop="10dp"
-        android:layout_marginBottom="12dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
         android:layout_weight="1"
         app:cardBackgroundColor="@color/surface_dark"
         app:cardCornerRadius="14dp"
@@ -276,6 +541,7 @@
 
             <!-- Helper tip badge at bottom -->
             <TextView
+                android:id="@+id/tvMapHint"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_alignParentBottom="true"
@@ -290,22 +556,22 @@
         </RelativeLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <!-- Fixed Action Buttons: Start & Stop (Always pinned to bottom) -->
+    <!-- Fixed Action Buttons: Start & Stop (Always pinned to bottom with dynamic insets) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="8dp"
+        android:layout_marginBottom="6dp"
         android:orientation="horizontal">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnStartMock"
             android:layout_width="0dp"
-            android:layout_height="54dp"
-            android:layout_marginEnd="6dp"
+            android:layout_height="52dp"
+            android:layout_marginEnd="5dp"
             android:layout_weight="1"
             android:text="START MOCK"
             android:textColor="@color/white"
-            android:textSize="14sp"
+            android:textSize="13sp"
             android:textStyle="bold"
             app:backgroundTint="@color/accent"
             app:cornerRadius="12dp"
@@ -315,12 +581,12 @@
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnStopMock"
             android:layout_width="0dp"
-            android:layout_height="54dp"
-            android:layout_marginStart="6dp"
+            android:layout_height="52dp"
+            android:layout_marginStart="5dp"
             android:layout_weight="1"
             android:text="STOP MOCK"
             android:textColor="@color/white"
-            android:textSize="14sp"
+            android:textSize="13sp"
             android:textStyle="bold"
             app:backgroundTint="@color/danger"
             app:cornerRadius="12dp"

@@ -14,7 +14,6 @@ import android.os.Bundle
 import android.provider.Settings
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
-import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,17 +22,33 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.lits.mocklocation.databinding.ActivityMainBinding
+import org.json.JSONArray
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var isMockRunning = false
+    private var isRouteMode = false
+    private var selectedDurationMinutes = 15
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == MockLocationService.ACTION_STATUS_CHANGED) {
-                val active = intent.getBooleanExtra(MockLocationService.EXTRA_IS_ACTIVE, false)
-                updateUiState(active)
+            when (intent?.action) {
+                MockLocationService.ACTION_STATUS_CHANGED -> {
+                    val active = intent.getBooleanExtra(MockLocationService.EXTRA_IS_ACTIVE, false)
+                    val route = intent.getBooleanExtra(MockLocationService.EXTRA_IS_ROUTE, false)
+                    updateUiState(active, route)
+                }
+                MockLocationService.ACTION_ROUTE_PROGRESS -> {
+                    val progress = intent.getIntExtra(MockLocationService.EXTRA_PROGRESS, 0)
+                    val lat = intent.getDoubleExtra(MockLocationService.EXTRA_LATITUDE, 0.0)
+                    val lng = intent.getDoubleExtra(MockLocationService.EXTRA_LONGITUDE, 0.0)
+                    val bearing = intent.getFloatExtra(MockLocationService.EXTRA_BEARING, 0f)
+                    val speed = intent.getFloatExtra(MockLocationService.EXTRA_SPEED, 0f)
+                    val reached = intent.getBooleanExtra(MockLocationService.EXTRA_REACHED, false)
+
+                    updateRouteProgress(progress, lat, lng, bearing, speed, reached)
+                }
             }
         }
     }
@@ -51,7 +66,7 @@ class MainActivity : AppCompatActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { view, windowInsets ->
             val insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
             val density = resources.displayMetrics.density
-            val extraBottom = (14 * density).toInt()
+            val extraBottom = (12 * density).toInt()
             view.setPadding(
                 (16 * density).toInt(),
                 insets.top.coerceAtLeast((10 * density).toInt()),
@@ -62,6 +77,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         askRequiredPermissions()
+        setupModeSwitching()
         setupListeners()
         setupMapWebView()
     }
@@ -69,7 +85,10 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         checkMockLocationPermission()
-        val filter = IntentFilter(MockLocationService.ACTION_STATUS_CHANGED)
+        val filter = IntentFilter().apply {
+            addAction(MockLocationService.ACTION_STATUS_CHANGED)
+            addAction(MockLocationService.ACTION_ROUTE_PROGRESS)
+        }
         ContextCompat.registerReceiver(
             this,
             statusReceiver,
@@ -113,6 +132,45 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun setupModeSwitching() {
+        binding.btnModeFixed.setOnClickListener {
+            switchMode(false)
+        }
+
+        binding.btnModeRoute.setOnClickListener {
+            switchMode(true)
+        }
+    }
+
+    private fun switchMode(routeMode: Boolean) {
+        isRouteMode = routeMode
+        if (routeMode) {
+            binding.btnModeRoute.setBackgroundColor(Color.parseColor("#6366F1"))
+            binding.btnModeRoute.setTextColor(Color.WHITE)
+            binding.btnModeFixed.setBackgroundColor(Color.TRANSPARENT)
+            binding.btnModeFixed.setTextColor(Color.parseColor("#94A3B8"))
+
+            binding.cardFixedSection.visibility = android.view.View.GONE
+            binding.cardRouteSection.visibility = android.view.View.VISIBLE
+            binding.btnStartMock.text = "START ROUTE MOCK"
+            binding.tvMapHint.text = "Build a route to start road simulation"
+
+            binding.mapWebView.evaluateJavascript("if (window.setRouteMode) { window.setRouteMode(true); }", null)
+        } else {
+            binding.btnModeFixed.setBackgroundColor(Color.parseColor("#6366F1"))
+            binding.btnModeFixed.setTextColor(Color.WHITE)
+            binding.btnModeRoute.setBackgroundColor(Color.TRANSPARENT)
+            binding.btnModeRoute.setTextColor(Color.parseColor("#94A3B8"))
+
+            binding.cardFixedSection.visibility = android.view.View.VISIBLE
+            binding.cardRouteSection.visibility = android.view.View.GONE
+            binding.btnStartMock.text = "START MOCK"
+            binding.tvMapHint.text = "Tap to place pin • Drag to pan map"
+
+            binding.mapWebView.evaluateJavascript("if (window.setRouteMode) { window.setRouteMode(false); }", null)
+        }
+    }
+
     private fun setupListeners() {
         binding.btnOpenDevSettings.setOnClickListener {
             try {
@@ -123,7 +181,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnStartMock.setOnClickListener {
-            startMockService()
+            if (isRouteMode) {
+                startRouteMockService()
+            } else {
+                startFixedMockService()
+            }
         }
 
         binding.btnStopMock.setOnClickListener {
@@ -136,6 +198,56 @@ class MainActivity : AppCompatActivity() {
         binding.btnPresetThane.setOnClickListener { setCoordinates(19.2183, 72.9781) }
         binding.btnPresetPune.setOnClickListener { setCoordinates(18.5204, 73.8567) }
         binding.btnPresetDelhi.setOnClickListener { setCoordinates(28.6139, 77.2090) }
+
+        // Route Controls
+        binding.btnSwapRoute.setOnClickListener {
+            val from = binding.etRouteFrom.text.toString()
+            val to = binding.etRouteTo.text.toString()
+            binding.etRouteFrom.setText(to)
+            binding.etRouteTo.setText(from)
+            triggerBuildRoute()
+        }
+
+        // Duration chips
+        val durButtons = listOf(
+            binding.btnDur5m to 5,
+            binding.btnDur15m to 15,
+            binding.btnDur30m to 30,
+            binding.btnDur45m to 45,
+            binding.btnDur60m to 60
+        )
+
+        for ((btn, mins) in durButtons) {
+            btn.setOnClickListener {
+                selectedDurationMinutes = mins
+                durButtons.forEach { (b, m) ->
+                    if (m == mins) {
+                        b.setBackgroundColor(Color.parseColor("#4F46E5"))
+                        b.setTextColor(Color.WHITE)
+                    } else {
+                        b.setBackgroundColor(Color.parseColor("#1E293B"))
+                        b.setTextColor(Color.parseColor("#94A3B8"))
+                    }
+                }
+                triggerBuildRoute()
+            }
+        }
+
+        binding.btnBuildRoute.setOnClickListener {
+            triggerBuildRoute()
+        }
+    }
+
+    private fun triggerBuildRoute() {
+        val from = binding.etRouteFrom.text.toString().trim()
+        val to = binding.etRouteTo.text.toString().trim()
+        if (from.isEmpty() || to.isEmpty()) {
+            Toast.makeText(this, "Please enter both From and To locations", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        binding.tvRouteSummary.text = "Calculating driving route..."
+        binding.mapWebView.evaluateJavascript("if (window.buildRoute) { window.buildRoute('$from', '$to', $selectedDurationMinutes); }", null)
     }
 
     private fun setCoordinates(lat: Double, lng: Double) {
@@ -143,13 +255,12 @@ class MainActivity : AppCompatActivity() {
         binding.etLongitude.setText(lng.toString())
         updateMapMarker(lat, lng)
 
-        if (isMockRunning) {
-            // Update live running mock location immediately
-            startMockService()
+        if (isMockRunning && !isRouteMode) {
+            startFixedMockService()
         }
     }
 
-    private fun startMockService() {
+    private fun startFixedMockService() {
         if (!isMockLocationAllowed()) {
             Toast.makeText(this, "Please select this app in Developer Options first!", Toast.LENGTH_LONG).show()
             startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
@@ -174,8 +285,35 @@ class MainActivity : AppCompatActivity() {
             startService(intent)
         }
 
-        updateUiState(true)
-        Toast.makeText(this, "Mocking GPS started!", Toast.LENGTH_SHORT).show()
+        updateUiState(true, false)
+        Toast.makeText(this, "Fixed Mock GPS started!", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun startRouteMockService() {
+        if (!isMockLocationAllowed()) {
+            Toast.makeText(this, "Please select this app in Developer Options first!", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+            return
+        }
+
+        if (RouteRepository.getPoints().isEmpty()) {
+            Toast.makeText(this, "Please tap 'Build Route' first!", Toast.LENGTH_SHORT).show()
+            triggerBuildRoute()
+            return
+        }
+
+        val intent = Intent(this, MockLocationService::class.java).apply {
+            action = MockLocationService.ACTION_START_ROUTE
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+
+        updateUiState(true, true)
+        Toast.makeText(this, "Route Mocking started!", Toast.LENGTH_SHORT).show()
     }
 
     private fun stopMockService() {
@@ -183,14 +321,14 @@ class MainActivity : AppCompatActivity() {
             action = MockLocationService.ACTION_STOP
         }
         startService(intent)
-        updateUiState(false)
+        updateUiState(false, isRouteMode)
         Toast.makeText(this, "Mocking stopped. Real GPS restored.", Toast.LENGTH_SHORT).show()
     }
 
-    private fun updateUiState(active: Boolean) {
+    private fun updateUiState(active: Boolean, route: Boolean) {
         isMockRunning = active
         if (active) {
-            binding.tvStatusBadge.text = "ACTIVE"
+            binding.tvStatusBadge.text = if (route) "ROUTE ACTIVE" else "ACTIVE"
             binding.tvStatusBadge.setBackgroundColor(Color.parseColor("#065F46"))
             binding.tvStatusBadge.setTextColor(Color.parseColor("#34D399"))
         } else {
@@ -198,6 +336,28 @@ class MainActivity : AppCompatActivity() {
             binding.tvStatusBadge.setBackgroundColor(Color.parseColor("#334155"))
             binding.tvStatusBadge.setTextColor(Color.parseColor("#94A3B8"))
         }
+    }
+
+    private fun updateRouteProgress(
+        progress: Int,
+        lat: Double,
+        lng: Double,
+        bearing: Float,
+        speed: Float,
+        reached: Boolean
+    ) {
+        val speedKmH = (speed * 3.6).toInt()
+        binding.tvStatusBadge.text = if (reached) "ARRIVED" else "$progress%"
+        binding.tvRouteSummary.text = if (reached) {
+            "🏁 Arrived at Destination • Mocking active"
+        } else {
+            "Progress: $progress% • Speed: $speedKmH km/h • Bearing: ${bearing.toInt()}°"
+        }
+
+        binding.mapWebView.evaluateJavascript(
+            "if (window.updateVehiclePosition) { window.updateVehiclePosition($lat, $lng, $bearing); }",
+            null
+        )
     }
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
@@ -231,11 +391,69 @@ class MainActivity : AppCompatActivity() {
             @JavascriptInterface
             fun onMapClick(lat: Double, lng: Double) {
                 runOnUiThread {
-                    binding.etLatitude.setText(String.format(java.util.Locale.US, "%.6f", lat))
-                    binding.etLongitude.setText(String.format(java.util.Locale.US, "%.6f", lng))
-                    if (isMockRunning) {
-                        startMockService()
+                    if (isRouteMode) {
+                        // In route mode, clicking sets the destination
+                        binding.etRouteTo.setText(String.format(java.util.Locale.US, "%.6f, %.6f", lat, lng))
+                        triggerBuildRoute()
+                    } else {
+                        binding.etLatitude.setText(String.format(java.util.Locale.US, "%.6f", lat))
+                        binding.etLongitude.setText(String.format(java.util.Locale.US, "%.6f", lng))
+                        if (isMockRunning) {
+                            startFixedMockService()
+                        }
                     }
+                }
+            }
+
+            @JavascriptInterface
+            fun onRouteCalculated(
+                routeJson: String,
+                distanceMeters: Double,
+                totalSeconds: Int,
+                distText: String,
+                durText: String
+            ) {
+                runOnUiThread {
+                    try {
+                        val jsonArr = JSONArray(routeJson)
+                        val pointsList = ArrayList<RoutePoint>(jsonArr.length())
+                        for (i in 0 until jsonArr.length()) {
+                            val obj = jsonArr.getJSONObject(i)
+                            pointsList.add(
+                                RoutePoint(
+                                    lat = obj.getDouble("lat"),
+                                    lng = obj.getDouble("lng"),
+                                    bearing = obj.optDouble("bearing", 0.0).toFloat(),
+                                    speed = obj.optDouble("speed", 0.0).toFloat()
+                                )
+                            )
+                        }
+
+                        val summary = RouteSummary(
+                            originName = binding.etRouteFrom.text.toString(),
+                            destinationName = binding.etRouteTo.text.toString(),
+                            distanceMeters = distanceMeters,
+                            durationSeconds = totalSeconds,
+                            totalPoints = pointsList.size
+                        )
+
+                        RouteRepository.setRoute(pointsList, summary)
+
+                        val speedKmH = ((distanceMeters / totalSeconds.coerceAtLeast(1)) * 3.6).toInt()
+                        binding.tvRouteSummary.text = "Distance: $distText • Avg: $speedKmH km/h (${pointsList.size} pts)"
+                        Toast.makeText(this@MainActivity, "Route ready: $distText in $durText", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        binding.tvRouteSummary.text = "Error parsing route points"
+                    }
+                }
+            }
+
+            @JavascriptInterface
+            fun onRouteError(errorMsg: String) {
+                runOnUiThread {
+                    binding.tvRouteSummary.text = "Route failed: $errorMsg"
+                    Toast.makeText(this@MainActivity, errorMsg, Toast.LENGTH_LONG).show()
                 }
             }
         }, "AndroidBridge")
@@ -255,12 +473,12 @@ class MainActivity : AppCompatActivity() {
                         background-color: #1e293b;
                         color: #ffffff;
                         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                        font-size: 14px;
+                        font-size: 13px;
                         font-weight: 500;
-                        padding: 10px 14px;
-                        width: calc(100% - 28px);
-                        max-width: 360px;
-                        margin-top: 12px;
+                        padding: 8px 12px;
+                        width: calc(100% - 24px);
+                        max-width: 340px;
+                        margin-top: 10px;
                         border: 1.5px solid #475569;
                         border-radius: 10px;
                         box-shadow: 0 6px 16px rgba(0,0,0,0.6);
@@ -294,20 +512,20 @@ class MainActivity : AppCompatActivity() {
                     }
                     .map-controls-group {
                         position: absolute;
-                        right: 14px;
-                        bottom: 30px;
+                        right: 12px;
+                        bottom: 24px;
                         display: flex;
                         flex-direction: column;
                         z-index: 9999;
                     }
                     .map-float-btn {
-                        width: 44px;
-                        height: 44px;
+                        width: 42px;
+                        height: 42px;
                         background: #1e293b;
                         border: 1.5px solid #475569;
-                        border-radius: 12px;
+                        border-radius: 10px;
                         color: #ffffff;
-                        font-size: 22px;
+                        font-size: 20px;
                         font-weight: bold;
                         display: flex;
                         align-items: center;
@@ -323,7 +541,7 @@ class MainActivity : AppCompatActivity() {
                         transform: scale(0.92);
                     }
                 </style>
-                <script src="https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places"></script>
+                <script src="https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry"></script>
             </head>
             <body>
                 <input id="pac-input" type="text" placeholder="🔍 Search place or address..." />
@@ -331,11 +549,12 @@ class MainActivity : AppCompatActivity() {
                 <div class="map-controls-group">
                     <div class="map-float-btn" onclick="zoomIn()">+</div>
                     <div class="map-float-btn" onclick="zoomOut()">−</div>
-                    <div class="map-float-btn" onclick="recenterMarker()" style="font-size: 18px;">🎯</div>
+                    <div class="map-float-btn" onclick="recenterMarker()" style="font-size: 16px;">🎯</div>
                 </div>
                 <script>
-                    var map, marker;
+                    var map, marker, carMarker, directionsService, directionsRenderer;
                     var isDragging = false;
+                    var isRouteActiveMode = false;
 
                     function initMap() {
                         var startPos = { lat: $initialLat, lng: $initialLng };
@@ -369,6 +588,35 @@ class MainActivity : AppCompatActivity() {
                             animation: google.maps.Animation.DROP
                         });
 
+                        // Navigation vehicle arrow marker
+                        var carIcon = {
+                            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                            scale: 6,
+                            fillColor: '#38bdf8',
+                            fillOpacity: 1,
+                            strokeWeight: 2,
+                            strokeColor: '#ffffff',
+                            rotation: 0
+                        };
+                        carMarker = new google.maps.Marker({
+                            position: startPos,
+                            map: map,
+                            icon: carIcon,
+                            visible: false
+                        });
+
+                        // Directions Service & Renderer
+                        directionsService = new google.maps.DirectionsService();
+                        directionsRenderer = new google.maps.DirectionsRenderer({
+                            map: map,
+                            suppressMarkers: false,
+                            polylineOptions: {
+                                strokeColor: '#38bdf8',
+                                strokeWeight: 6,
+                                strokeOpacity: 0.9
+                            }
+                        });
+
                         function notifyApp(lat, lng) {
                             if (window.AndroidBridge) {
                                 window.AndroidBridge.onMapClick(lat, lng);
@@ -389,7 +637,9 @@ class MainActivity : AppCompatActivity() {
                             if (isDragging) return;
                             var lat = e.latLng.lat();
                             var lng = e.latLng.lng();
-                            marker.setPosition(e.latLng);
+                            if (!isRouteActiveMode) {
+                                marker.setPosition(e.latLng);
+                            }
                             notifyApp(lat, lng);
                         });
 
@@ -412,7 +662,9 @@ class MainActivity : AppCompatActivity() {
                             var loc = place.geometry.location;
                             map.panTo(loc);
                             map.setZoom(16);
-                            marker.setPosition(loc);
+                            if (!isRouteActiveMode) {
+                                marker.setPosition(loc);
+                            }
                             notifyApp(loc.lat(), loc.lng());
                         });
 
@@ -420,6 +672,118 @@ class MainActivity : AppCompatActivity() {
                             var newPos = { lat: lat, lng: lng };
                             marker.setPosition(newPos);
                             map.panTo(newPos);
+                        };
+
+                        window.setRouteMode = function(isRoute) {
+                            isRouteActiveMode = isRoute;
+                            if (isRoute) {
+                                marker.setVisible(false);
+                            } else {
+                                marker.setVisible(true);
+                                carMarker.setVisible(false);
+                                directionsRenderer.set('directions', null);
+                            }
+                        };
+
+                        window.updateVehiclePosition = function(lat, lng, bearing) {
+                            var pos = { lat: lat, lng: lng };
+                            carMarker.setPosition(pos);
+                            var icon = carMarker.getIcon();
+                            icon.rotation = bearing;
+                            carMarker.setIcon(icon);
+                            carMarker.setVisible(true);
+                        };
+
+                        window.buildRoute = function(fromQuery, toQuery, durationMinutes) {
+                            var request = {
+                                origin: fromQuery,
+                                destination: toQuery,
+                                travelMode: google.maps.TravelMode.DRIVING
+                            };
+
+                            directionsService.route(request, function(result, status) {
+                                if (status === google.maps.DirectionsStatus.OK) {
+                                    directionsRenderer.setDirections(result);
+                                    marker.setVisible(false);
+
+                                    var route = result.routes[0];
+                                    var leg = route.legs[0];
+                                    var totalDistanceMeters = leg.distance.value;
+                                    var totalSeconds = durationMinutes * 60;
+
+                                    // Extract all detailed polyline vertices
+                                    var rawPoints = [];
+                                    for (var i = 0; i < leg.steps.length; i++) {
+                                        var step = leg.steps[i];
+                                        for (var j = 0; j < step.path.length; j++) {
+                                            rawPoints.push(step.path[j]);
+                                        }
+                                    }
+
+                                    // Resample into 1-second waypoints
+                                    var cumDistances = [0];
+                                    var totalPolylineDistance = 0;
+                                    for (var k = 0; k < rawPoints.length - 1; k++) {
+                                        var d = google.maps.geometry.spherical.computeDistanceBetween(rawPoints[k], rawPoints[k + 1]);
+                                        totalPolylineDistance += d;
+                                        cumDistances.push(totalPolylineDistance);
+                                    }
+
+                                    var resampledRoute = [];
+                                    var distStep = totalPolylineDistance / totalSeconds;
+                                    var currentRawIdx = 0;
+
+                                    for (var s = 0; s < totalSeconds; s++) {
+                                        var targetDist = s * distStep;
+                                        while (currentRawIdx < cumDistances.length - 2 && cumDistances[currentRawIdx + 1] < targetDist) {
+                                            currentRawIdx++;
+                                        }
+                                        var p1 = rawPoints[currentRawIdx];
+                                        var p2 = rawPoints[currentRawIdx + 1];
+                                        var segStart = cumDistances[currentRawIdx];
+                                        var segEnd = cumDistances[currentRawIdx + 1];
+                                        var segLength = segEnd - segStart;
+                                        var frac = segLength > 0 ? (targetDist - segStart) / segLength : 0;
+                                        var pt = google.maps.geometry.spherical.interpolate(p1, p2, frac);
+
+                                        var bearing = google.maps.geometry.spherical.computeHeading(p1, p2);
+                                        if (bearing < 0) bearing += 360;
+
+                                        var speed = distStep; // m/s
+
+                                        resampledRoute.push({
+                                            lat: pt.lat(),
+                                            lng: pt.lng(),
+                                            bearing: Math.round(bearing * 10) / 10,
+                                            speed: Math.round(speed * 10) / 10
+                                        });
+                                    }
+
+                                    // Append destination exact point
+                                    var destLatLng = leg.end_location;
+                                    resampledRoute.push({
+                                        lat: destLatLng.lat(),
+                                        lng: destLatLng.lng(),
+                                        bearing: resampledRoute.length > 0 ? resampledRoute[resampledRoute.length - 1].bearing : 0,
+                                        speed: 0
+                                    });
+
+                                    // Position car at start
+                                    var startPt = resampledRoute[0];
+                                    carMarker.setPosition({ lat: startPt.lat, lng: startPt.lng });
+                                    carMarker.setVisible(true);
+
+                                    window.AndroidBridge.onRouteCalculated(
+                                        JSON.stringify(resampledRoute),
+                                        totalDistanceMeters,
+                                        totalSeconds,
+                                        leg.distance.text,
+                                        durationMinutes + " min"
+                                    );
+                                } else {
+                                    window.AndroidBridge.onRouteError("Could not find route: " + status);
+                                }
+                            });
                         };
 
                         window.zoomIn = function() {
@@ -431,7 +795,11 @@ class MainActivity : AppCompatActivity() {
                         };
 
                         window.recenterMarker = function() {
-                            map.panTo(marker.getPosition());
+                            if (isRouteActiveMode) {
+                                map.panTo(carMarker.getPosition());
+                            } else {
+                                map.panTo(marker.getPosition());
+                            }
                         };
                     }
 
