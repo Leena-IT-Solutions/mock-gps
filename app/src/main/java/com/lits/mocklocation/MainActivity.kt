@@ -293,13 +293,18 @@ class MainActivity : AppCompatActivity() {
             triggerBuildRoute()
         }
 
-        // Duration chips
+        // Duration chips up to 12 hours
         val durButtons = listOf(
-            binding.btnDur5m to 5,
             binding.btnDur15m to 15,
             binding.btnDur30m to 30,
-            binding.btnDur45m to 45,
-            binding.btnDur60m to 60
+            binding.btnDur1h to 60,
+            binding.btnDur2h to 120,
+            binding.btnDur3h to 180,
+            binding.btnDur4h to 240,
+            binding.btnDur6h to 360,
+            binding.btnDur8h to 480,
+            binding.btnDur10h to 600,
+            binding.btnDur12h to 720
         )
 
         for ((btn, mins) in durButtons) {
@@ -314,14 +319,70 @@ class MainActivity : AppCompatActivity() {
                         b.setTextColor(Color.parseColor("#94A3B8"))
                     }
                 }
+                binding.btnDurCustom.setBackgroundColor(Color.parseColor("#1E293B"))
+                binding.btnDurCustom.setTextColor(Color.parseColor("#94A3B8"))
                 triggerBuildRoute()
             }
+        }
+
+        binding.btnDurCustom.setOnClickListener {
+            showCustomDurationDialog(durButtons)
         }
 
         binding.btnBuildRoute.setOnClickListener {
             triggerBuildRoute()
         }
     }
+
+    private fun showCustomDurationDialog(durButtons: List<Pair<com.google.android.material.button.MaterialButton, Int>>) {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_custom_duration, null)
+        val npHours = dialogView.findViewById<android.widget.NumberPicker>(R.id.npHours)
+        val npMinutes = dialogView.findViewById<android.widget.NumberPicker>(R.id.npMinutes)
+        val tvPreview = dialogView.findViewById<android.widget.TextView>(R.id.tvDurationResultPreview)
+
+        npHours.minValue = 0
+        npHours.maxValue = 12
+        npHours.value = (selectedDurationMinutes / 60).coerceIn(0, 12)
+
+        npMinutes.minValue = 0
+        npMinutes.maxValue = 59
+        npMinutes.value = (selectedDurationMinutes % 60).coerceIn(0, 59)
+
+        fun updatePreview() {
+            val h = npHours.value
+            val m = npMinutes.value
+            tvPreview.text = "Total: ${h} hr ${m} min"
+        }
+
+        npHours.setOnValueChangedListener { _, _, _ -> updatePreview() }
+        npMinutes.setOnValueChangedListener { _, _, _ -> updatePreview() }
+        updatePreview()
+
+        com.google.android.material.dialog.MaterialAlertDialogBuilder(this, com.google.android.material.R.style.ThemeOverlay_Material3_MaterialAlertDialog)
+            .setView(dialogView)
+            .setPositiveButton("Apply") { _, _ ->
+                val totalMins = (npHours.value * 60 + npMinutes.value).coerceIn(1, 720)
+                selectedDurationMinutes = totalMins
+
+                // Uncheck preset buttons
+                durButtons.forEach { (b, _) ->
+                    b.setBackgroundColor(Color.parseColor("#1E293B"))
+                    b.setTextColor(Color.parseColor("#94A3B8"))
+                }
+
+                // Highlight custom button
+                val h = totalMins / 60
+                val m = totalMins % 60
+                binding.btnDurCustom.text = if (h > 0 && m > 0) "${h}h ${m}m ✎" else if (h > 0) "${h}h ✎" else "${m}m ✎"
+                binding.btnDurCustom.setBackgroundColor(Color.parseColor("#4F46E5"))
+                binding.btnDurCustom.setTextColor(Color.WHITE)
+
+                triggerBuildRoute()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
 
     private fun triggerBuildRoute() {
         val from = binding.etRouteFrom.text.toString().trim()
@@ -523,17 +584,10 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     try {
                         val jsonArr = JSONArray(routeJson)
-                        val pointsList = ArrayList<RoutePoint>(jsonArr.length())
+                        val rawList = ArrayList<Pair<Double, Double>>(jsonArr.length())
                         for (i in 0 until jsonArr.length()) {
                             val obj = jsonArr.getJSONObject(i)
-                            pointsList.add(
-                                RoutePoint(
-                                    lat = obj.getDouble("lat"),
-                                    lng = obj.getDouble("lng"),
-                                    bearing = obj.optDouble("bearing", 0.0).toFloat(),
-                                    speed = obj.optDouble("speed", 0.0).toFloat()
-                                )
-                            )
+                            rawList.add(Pair(obj.getDouble("lat"), obj.getDouble("lng")))
                         }
 
                         val summary = RouteSummary(
@@ -541,13 +595,14 @@ class MainActivity : AppCompatActivity() {
                             destinationName = binding.etRouteTo.text.toString(),
                             distanceMeters = distanceMeters,
                             durationSeconds = totalSeconds,
-                            totalPoints = pointsList.size
+                            totalPoints = totalSeconds + 1
                         )
 
-                        RouteRepository.setRoute(pointsList, summary)
+                        RouteRepository.setRoute(rawList, summary)
 
                         val speedKmH = ((distanceMeters / totalSeconds.coerceAtLeast(1)) * 3.6).toInt()
-                        binding.tvRouteSummary.text = "Distance: $distText • Avg: $speedKmH km/h (${pointsList.size} pts)"
+                        val speedDisplay = if (speedKmH == 0) String.format(java.util.Locale.US, "%.1f km/h", (distanceMeters / totalSeconds.coerceAtLeast(1)) * 3.6) else "$speedKmH km/h"
+                        binding.tvRouteSummary.text = "Distance: $distText • Avg: $speedDisplay ($durText)"
                         Toast.makeText(this@MainActivity, "Route ready: $distText in $durText", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
                         e.printStackTrace()
@@ -555,6 +610,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+
 
             @JavascriptInterface
             fun onRouteError(errorMsg: String) {
@@ -818,74 +874,48 @@ class MainActivity : AppCompatActivity() {
                                     var totalDistanceMeters = leg.distance.value;
                                     var totalSeconds = durationMinutes * 60;
 
-                                    // Extract all detailed polyline vertices
+                                    // Extract raw road polyline vertices (~200 - 1500 points)
                                     var rawPoints = [];
                                     for (var i = 0; i < leg.steps.length; i++) {
                                         var step = leg.steps[i];
                                         for (var j = 0; j < step.path.length; j++) {
-                                            rawPoints.push(step.path[j]);
+                                            rawPoints.push({
+                                                lat: Math.round(step.path[j].lat() * 1000000) / 1000000,
+                                                lng: Math.round(step.path[j].lng() * 1000000) / 1000000
+                                            });
                                         }
                                     }
 
-                                    // Resample into 1-second waypoints
-                                    var cumDistances = [0];
-                                    var totalPolylineDistance = 0;
-                                    for (var k = 0; k < rawPoints.length - 1; k++) {
-                                        var d = google.maps.geometry.spherical.computeDistanceBetween(rawPoints[k], rawPoints[k + 1]);
-                                        totalPolylineDistance += d;
-                                        cumDistances.push(totalPolylineDistance);
-                                    }
-
-                                    var resampledRoute = [];
-                                    var distStep = totalPolylineDistance / totalSeconds;
-                                    var currentRawIdx = 0;
-
-                                    for (var s = 0; s < totalSeconds; s++) {
-                                        var targetDist = s * distStep;
-                                        while (currentRawIdx < cumDistances.length - 2 && cumDistances[currentRawIdx + 1] < targetDist) {
-                                            currentRawIdx++;
+                                    // Position car marker at start point with initial heading
+                                    if (rawPoints.length > 0) {
+                                        var startPt = rawPoints[0];
+                                        carMarker.setPosition({ lat: startPt.lat, lng: startPt.lng });
+                                        var heading = 0;
+                                        if (rawPoints.length > 1) {
+                                            heading = google.maps.geometry.spherical.computeHeading(
+                                                new google.maps.LatLng(startPt.lat, startPt.lng),
+                                                new google.maps.LatLng(rawPoints[1].lat, rawPoints[1].lng)
+                                            );
+                                            if (heading < 0) heading += 360;
                                         }
-                                        var p1 = rawPoints[currentRawIdx];
-                                        var p2 = rawPoints[currentRawIdx + 1];
-                                        var segStart = cumDistances[currentRawIdx];
-                                        var segEnd = cumDistances[currentRawIdx + 1];
-                                        var segLength = segEnd - segStart;
-                                        var frac = segLength > 0 ? (targetDist - segStart) / segLength : 0;
-                                        var pt = google.maps.geometry.spherical.interpolate(p1, p2, frac);
-
-                                        var bearing = google.maps.geometry.spherical.computeHeading(p1, p2);
-                                        if (bearing < 0) bearing += 360;
-
-                                        var speed = distStep; // m/s
-
-                                        resampledRoute.push({
-                                            lat: pt.lat(),
-                                            lng: pt.lng(),
-                                            bearing: Math.round(bearing * 10) / 10,
-                                            speed: Math.round(speed * 10) / 10
-                                        });
+                                        var icon = carMarker.getIcon();
+                                        if (icon) {
+                                            icon.rotation = heading;
+                                            carMarker.setIcon(icon);
+                                        }
+                                        carMarker.setVisible(true);
                                     }
 
-                                    // Append destination exact point
-                                    var destLatLng = leg.end_location;
-                                    resampledRoute.push({
-                                        lat: destLatLng.lat(),
-                                        lng: destLatLng.lng(),
-                                        bearing: resampledRoute.length > 0 ? resampledRoute[resampledRoute.length - 1].bearing : 0,
-                                        speed: 0
-                                    });
-
-                                    // Position car at start
-                                    var startPt = resampledRoute[0];
-                                    carMarker.setPosition({ lat: startPt.lat, lng: startPt.lng });
-                                    carMarker.setVisible(true);
+                                    var durLabel = durationMinutes >= 60 ?
+                                        (Math.floor(durationMinutes / 60) + " hr" + (durationMinutes % 60 > 0 ? " " + (durationMinutes % 60) + " min" : "")) :
+                                        (durationMinutes + " min");
 
                                     window.AndroidBridge.onRouteCalculated(
-                                        JSON.stringify(resampledRoute),
+                                        JSON.stringify(rawPoints),
                                         totalDistanceMeters,
                                         totalSeconds,
                                         leg.distance.text,
-                                        durationMinutes + " min"
+                                        durLabel
                                     );
                                 } else {
                                     window.AndroidBridge.onRouteError("Could not find route: " + status);

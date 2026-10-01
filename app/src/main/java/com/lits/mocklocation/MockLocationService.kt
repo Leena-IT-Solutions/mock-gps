@@ -390,7 +390,15 @@ class MockLocationService : Service() {
         } else {
             val remainingSecs = (RouteRepository.getPoints().size - RouteRepository.currentIndex).coerceAtLeast(0)
             val remainingMins = (remainingSecs + 59) / 60
-            "Speed: $speedKmH km/h • ~$remainingMins min left"
+            val timeText = if (remainingMins >= 60) {
+                val hrs = remainingMins / 60
+                val mins = remainingMins % 60
+                if (mins > 0) "${hrs}h ${mins}m left" else "${hrs}h left"
+            } else {
+                "$remainingMins min left"
+            }
+            val speedDisplay = if (speedKmH == 0) String.format(java.util.Locale.US, "%.1f km/h", speedMs * 3.6) else "$speedKmH km/h"
+            "Speed: $speedDisplay • ~$timeText"
         }
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
