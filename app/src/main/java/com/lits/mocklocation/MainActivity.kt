@@ -23,12 +23,14 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.lits.mocklocation.databinding.ActivityMainBinding
 import org.json.JSONArray
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var isMockRunning = false
-    private var isRouteMode = false
+    private var currentMode = MockLocationService.MODE_FIXED
+    private val isRouteMode get() = (currentMode == MockLocationService.MODE_ROUTE)
     private var selectedDurationMinutes = 15
 
     private val statusReceiver = object : BroadcastReceiver() {
@@ -36,8 +38,8 @@ class MainActivity : AppCompatActivity() {
             when (intent?.action) {
                 MockLocationService.ACTION_STATUS_CHANGED -> {
                     val active = intent.getBooleanExtra(MockLocationService.EXTRA_IS_ACTIVE, false)
-                    val route = intent.getBooleanExtra(MockLocationService.EXTRA_IS_ROUTE, false)
-                    updateUiState(active, route)
+                    val mode = intent.getIntExtra(MockLocationService.EXTRA_MODE, currentMode)
+                    updateUiState(active, mode)
                 }
                 MockLocationService.ACTION_ROUTE_PROGRESS -> {
                     val progress = intent.getIntExtra(MockLocationService.EXTRA_PROGRESS, 0)
@@ -48,6 +50,19 @@ class MainActivity : AppCompatActivity() {
                     val reached = intent.getBooleanExtra(MockLocationService.EXTRA_REACHED, false)
 
                     updateRouteProgress(progress, lat, lng, bearing, speed, reached)
+                }
+                MockLocationService.ACTION_RANDOM_UPDATE -> {
+                    val cityName = intent.getStringExtra(MockLocationService.EXTRA_CITY_NAME) ?: "Tokyo"
+                    val countryName = intent.getStringExtra(MockLocationService.EXTRA_COUNTRY_NAME) ?: "Japan"
+                    val flag = intent.getStringExtra(MockLocationService.EXTRA_FLAG_EMOJI) ?: "🇯🇵"
+                    val lat = intent.getDoubleExtra(MockLocationService.EXTRA_LATITUDE, 35.6762)
+                    val lng = intent.getDoubleExtra(MockLocationService.EXTRA_LONGITUDE, 139.6503)
+                    val cityIdx = intent.getIntExtra(MockLocationService.EXTRA_CITY_INDEX, 0)
+                    val totalCities = intent.getIntExtra(MockLocationService.EXTRA_TOTAL_CITIES, WorldCityRepository.CITIES.size)
+                    val remainingSecs = intent.getIntExtra(MockLocationService.EXTRA_SECONDS_REMAINING, WorldCityRepository.INTERVAL_SECONDS)
+                    val changed = intent.getBooleanExtra(MockLocationService.EXTRA_CITY_CHANGED, false)
+
+                    updateRandomCityProgress(cityName, countryName, flag, lat, lng, cityIdx, totalCities, remainingSecs, changed)
                 }
             }
         }
@@ -79,10 +94,9 @@ class MainActivity : AppCompatActivity() {
         askRequiredPermissions()
         setupModeSwitching()
         setupListeners()
-        updateUiState(false, false)
+        updateUiState(false, MockLocationService.MODE_FIXED)
         setupMapWebView()
     }
-
 
     override fun onResume() {
         super.onResume()
@@ -93,6 +107,7 @@ class MainActivity : AppCompatActivity() {
         val filter = IntentFilter().apply {
             addAction(MockLocationService.ACTION_STATUS_CHANGED)
             addAction(MockLocationService.ACTION_ROUTE_PROGRESS)
+            addAction(MockLocationService.ACTION_RANDOM_UPDATE)
         }
         ContextCompat.registerReceiver(
             this,
@@ -145,37 +160,48 @@ class MainActivity : AppCompatActivity() {
     private fun syncStateWithRunningService() {
         val prefs = getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
         val isMocking = prefs.getBoolean(MockLocationService.KEY_IS_MOCKING, false) || MockLocationService.isRunning
-        val isRoute = prefs.getBoolean(MockLocationService.KEY_IS_ROUTE_MODE, false) || MockLocationService.isRouteRunning
+        val mode = prefs.getInt(MockLocationService.KEY_MOCK_MODE, MockLocationService.currentMockMode)
 
         if (isMocking) {
-            updateUiState(true, isRoute)
-            if (isRoute) {
-                switchMode(true)
-                if (RouteRepository.getPoints().isEmpty()) {
-                    RouteRepository.loadFromDisk(this)
+            updateUiState(true, mode)
+            when (mode) {
+                MockLocationService.MODE_RANDOM -> {
+                    switchMode(MockLocationService.MODE_RANDOM)
+                    val cityIdx = prefs.getInt(MockLocationService.KEY_RANDOM_CITY_INDEX, WorldCityRepository.currentCityIndex)
+                    val remaining = prefs.getInt(MockLocationService.KEY_RANDOM_SECS_REMAINING, WorldCityRepository.INTERVAL_SECONDS)
+                    val city = WorldCityRepository.setCityByIndex(cityIdx)
+                    updateRandomCityUi(city, remaining)
+                    binding.mapWebView.evaluateJavascript("if (window.setCityLocation) { window.setCityLocation(${city.lat}, ${city.lng}); }", null)
                 }
-                RouteRepository.summary?.let {
-                    if (binding.etRouteFrom.text.isNullOrEmpty()) binding.etRouteFrom.setText(it.originName)
-                    if (binding.etRouteTo.text.isNullOrEmpty()) binding.etRouteTo.setText(it.destinationName)
+                MockLocationService.MODE_ROUTE -> {
+                    switchMode(MockLocationService.MODE_ROUTE)
+                    if (RouteRepository.getPoints().isEmpty()) {
+                        RouteRepository.loadFromDisk(this)
+                    }
+                    RouteRepository.summary?.let {
+                        if (binding.etRouteFrom.text.isNullOrEmpty()) binding.etRouteFrom.setText(it.originName)
+                        if (binding.etRouteTo.text.isNullOrEmpty()) binding.etRouteTo.setText(it.destinationName)
+                    }
+                    val point = RouteRepository.getCurrentPoint()
+                    val lat = point?.lat ?: MockLocationService.currentMockLat
+                    val lng = point?.lng ?: MockLocationService.currentMockLng
+                    val bearing = point?.bearing ?: MockLocationService.currentMockBearing
+                    val speed = point?.speed ?: MockLocationService.currentMockSpeed
+                    val reached = RouteRepository.hasReachedDestination()
+                    val progress = RouteRepository.getProgressPercent()
+                    updateRouteProgress(progress, lat, lng, bearing, speed, reached)
                 }
-                val point = RouteRepository.getCurrentPoint()
-                val lat = point?.lat ?: MockLocationService.currentMockLat
-                val lng = point?.lng ?: MockLocationService.currentMockLng
-                val bearing = point?.bearing ?: MockLocationService.currentMockBearing
-                val speed = point?.speed ?: MockLocationService.currentMockSpeed
-                val reached = RouteRepository.hasReachedDestination()
-                val progress = RouteRepository.getProgressPercent()
-                updateRouteProgress(progress, lat, lng, bearing, speed, reached)
-            } else {
-                switchMode(false)
-                val lat = prefs.getFloat(MockLocationService.KEY_TARGET_LAT, 19.1989f).toDouble()
-                val lng = prefs.getFloat(MockLocationService.KEY_TARGET_LNG, 73.1918f).toDouble()
-                binding.etLatitude.setText(String.format(java.util.Locale.US, "%.6f", lat))
-                binding.etLongitude.setText(String.format(java.util.Locale.US, "%.6f", lng))
-                updateMapMarker(lat, lng)
+                else -> {
+                    switchMode(MockLocationService.MODE_FIXED)
+                    val lat = prefs.getFloat(MockLocationService.KEY_TARGET_LAT, 19.1989f).toDouble()
+                    val lng = prefs.getFloat(MockLocationService.KEY_TARGET_LNG, 73.1918f).toDouble()
+                    binding.etLatitude.setText(String.format(Locale.US, "%.6f", lat))
+                    binding.etLongitude.setText(String.format(Locale.US, "%.6f", lng))
+                    updateMapMarker(lat, lng)
+                }
             }
         } else {
-            updateUiState(false, isRouteMode)
+            updateUiState(false, currentMode)
         }
     }
 
@@ -209,40 +235,71 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupModeSwitching() {
         binding.btnModeFixed.setOnClickListener {
-            switchMode(false)
+            switchMode(MockLocationService.MODE_FIXED)
         }
 
         binding.btnModeRoute.setOnClickListener {
-            switchMode(true)
+            switchMode(MockLocationService.MODE_ROUTE)
+        }
+
+        binding.btnModeRandom.setOnClickListener {
+            switchMode(MockLocationService.MODE_RANDOM)
         }
     }
 
-    private fun switchMode(routeMode: Boolean) {
-        isRouteMode = routeMode
-        if (routeMode) {
-            binding.btnModeRoute.setBackgroundColor(Color.parseColor("#6366F1"))
-            binding.btnModeRoute.setTextColor(Color.WHITE)
-            binding.btnModeFixed.setBackgroundColor(Color.TRANSPARENT)
-            binding.btnModeFixed.setTextColor(Color.parseColor("#94A3B8"))
+    private fun switchMode(mode: Int) {
+        currentMode = mode
+        when (mode) {
+            MockLocationService.MODE_FIXED -> {
+                binding.btnModeFixed.setBackgroundColor(Color.parseColor("#6366F1"))
+                binding.btnModeFixed.setTextColor(Color.WHITE)
+                binding.btnModeRoute.setBackgroundColor(Color.TRANSPARENT)
+                binding.btnModeRoute.setTextColor(Color.parseColor("#94A3B8"))
+                binding.btnModeRandom.setBackgroundColor(Color.TRANSPARENT)
+                binding.btnModeRandom.setTextColor(Color.parseColor("#94A3B8"))
 
-            binding.cardFixedSection.visibility = android.view.View.GONE
-            binding.cardRouteSection.visibility = android.view.View.VISIBLE
-            binding.btnStartMock.text = "START ROUTE MOCK"
-            binding.tvMapHint.text = "Build a route to start road simulation"
+                binding.cardFixedSection.visibility = android.view.View.VISIBLE
+                binding.cardRouteSection.visibility = android.view.View.GONE
+                binding.cardRandomSection.visibility = android.view.View.GONE
+                binding.btnStartMock.text = "START MOCK"
+                binding.tvMapHint.text = "Tap to place pin • Drag to pan map"
 
-            binding.mapWebView.evaluateJavascript("if (window.setRouteMode) { window.setRouteMode(true); }", null)
-        } else {
-            binding.btnModeFixed.setBackgroundColor(Color.parseColor("#6366F1"))
-            binding.btnModeFixed.setTextColor(Color.WHITE)
-            binding.btnModeRoute.setBackgroundColor(Color.TRANSPARENT)
-            binding.btnModeRoute.setTextColor(Color.parseColor("#94A3B8"))
+                binding.mapWebView.evaluateJavascript("if (window.setRouteMode) { window.setRouteMode(false); }", null)
+            }
+            MockLocationService.MODE_ROUTE -> {
+                binding.btnModeRoute.setBackgroundColor(Color.parseColor("#6366F1"))
+                binding.btnModeRoute.setTextColor(Color.WHITE)
+                binding.btnModeFixed.setBackgroundColor(Color.TRANSPARENT)
+                binding.btnModeFixed.setTextColor(Color.parseColor("#94A3B8"))
+                binding.btnModeRandom.setBackgroundColor(Color.TRANSPARENT)
+                binding.btnModeRandom.setTextColor(Color.parseColor("#94A3B8"))
 
-            binding.cardFixedSection.visibility = android.view.View.VISIBLE
-            binding.cardRouteSection.visibility = android.view.View.GONE
-            binding.btnStartMock.text = "START MOCK"
-            binding.tvMapHint.text = "Tap to place pin • Drag to pan map"
+                binding.cardFixedSection.visibility = android.view.View.GONE
+                binding.cardRouteSection.visibility = android.view.View.VISIBLE
+                binding.cardRandomSection.visibility = android.view.View.GONE
+                binding.btnStartMock.text = "START ROUTE MOCK"
+                binding.tvMapHint.text = "Build a route to start road simulation"
 
-            binding.mapWebView.evaluateJavascript("if (window.setRouteMode) { window.setRouteMode(false); }", null)
+                binding.mapWebView.evaluateJavascript("if (window.setRouteMode) { window.setRouteMode(true); }", null)
+            }
+            MockLocationService.MODE_RANDOM -> {
+                binding.btnModeRandom.setBackgroundColor(Color.parseColor("#6366F1"))
+                binding.btnModeRandom.setTextColor(Color.WHITE)
+                binding.btnModeFixed.setBackgroundColor(Color.TRANSPARENT)
+                binding.btnModeFixed.setTextColor(Color.parseColor("#94A3B8"))
+                binding.btnModeRoute.setBackgroundColor(Color.TRANSPARENT)
+                binding.btnModeRoute.setTextColor(Color.parseColor("#94A3B8"))
+
+                binding.cardFixedSection.visibility = android.view.View.GONE
+                binding.cardRouteSection.visibility = android.view.View.GONE
+                binding.cardRandomSection.visibility = android.view.View.VISIBLE
+                binding.btnStartMock.text = "START RANDOM MOCK"
+                binding.tvMapHint.text = "Major world cities • Auto jumps every 2 mins"
+
+                val city = WorldCityRepository.getCurrentCity()
+                updateRandomCityUi(city, WorldCityRepository.secondsRemaining)
+                binding.mapWebView.evaluateJavascript("if (window.setCityLocation) { window.setCityLocation(${city.lat}, ${city.lng}); }", null)
+            }
         }
     }
 
@@ -265,10 +322,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnStartMock.setOnClickListener {
             if (isMockRunning) return@setOnClickListener
-            if (isRouteMode) {
-                startRouteMockService()
-            } else {
-                startFixedMockService()
+            when (currentMode) {
+                MockLocationService.MODE_ROUTE -> startRouteMockService()
+                MockLocationService.MODE_RANDOM -> startRandomMockService()
+                else -> startFixedMockService()
             }
         }
 
@@ -277,7 +334,7 @@ class MainActivity : AppCompatActivity() {
             stopMockService()
         }
 
-        // Quick City Presets
+        // Quick City Presets (Fixed Mode)
         binding.btnPresetAmbernath.setOnClickListener { setCoordinates(19.1989, 73.1918) }
         binding.btnPresetMumbai.setOnClickListener { setCoordinates(19.0657, 72.8687) }
         binding.btnPresetThane.setOnClickListener { setCoordinates(19.2183, 72.9781) }
@@ -332,6 +389,50 @@ class MainActivity : AppCompatActivity() {
         binding.btnBuildRoute.setOnClickListener {
             triggerBuildRoute()
         }
+
+        // Random Mode: Next City button
+        binding.btnNextCity.setOnClickListener {
+            if (isMockRunning && currentMode == MockLocationService.MODE_RANDOM) {
+                val intent = Intent(this, MockLocationService::class.java).apply {
+                    action = MockLocationService.ACTION_NEXT_RANDOM_CITY
+                }
+                startService(intent)
+            } else {
+                val nextCity = WorldCityRepository.nextCity()
+                updateRandomCityUi(nextCity, WorldCityRepository.INTERVAL_SECONDS)
+                binding.mapWebView.evaluateJavascript("if (window.setCityLocation) { window.setCityLocation(${nextCity.lat}, ${nextCity.lng}); }", null)
+            }
+        }
+
+        // Random Mode: Quick City Jump Chips
+        val quickCityChips = listOf(
+            binding.btnQuickTokyo to "Tokyo",
+            binding.btnQuickParis to "Paris",
+            binding.btnQuickNYC to "New York City",
+            binding.btnQuickLondon to "London",
+            binding.btnQuickDubai to "Dubai",
+            binding.btnQuickSingapore to "Singapore",
+            binding.btnQuickSydney to "Sydney",
+            binding.btnQuickRome to "Rome"
+        )
+        for ((btn, cityName) in quickCityChips) {
+            btn.setOnClickListener {
+                jumpToWorldCity(cityName)
+            }
+        }
+    }
+
+    private fun jumpToWorldCity(cityName: String) {
+        val idx = WorldCityRepository.CITIES.indexOfFirst { it.name.equals(cityName, ignoreCase = true) }
+        if (idx >= 0) {
+            val city = WorldCityRepository.setCityByIndex(idx)
+            updateRandomCityUi(city, WorldCityRepository.INTERVAL_SECONDS)
+            binding.mapWebView.evaluateJavascript("if (window.setCityLocation) { window.setCityLocation(${city.lat}, ${city.lng}); }", null)
+
+            if (isMockRunning && currentMode == MockLocationService.MODE_RANDOM) {
+                startRandomMockService()
+            }
+        }
     }
 
     private fun showCustomDurationDialog(durButtons: List<Pair<com.google.android.material.button.MaterialButton, Int>>) {
@@ -383,7 +484,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-
     private fun triggerBuildRoute() {
         val from = binding.etRouteFrom.text.toString().trim()
         val to = binding.etRouteTo.text.toString().trim()
@@ -401,7 +501,7 @@ class MainActivity : AppCompatActivity() {
         binding.etLongitude.setText(lng.toString())
         updateMapMarker(lat, lng)
 
-        if (isMockRunning && !isRouteMode) {
+        if (isMockRunning && currentMode == MockLocationService.MODE_FIXED) {
             startFixedMockService()
         }
     }
@@ -431,7 +531,7 @@ class MainActivity : AppCompatActivity() {
             startService(intent)
         }
 
-        updateUiState(true, false)
+        updateUiState(true, MockLocationService.MODE_FIXED)
         Toast.makeText(this, "Fixed Mock GPS started!", Toast.LENGTH_SHORT).show()
     }
 
@@ -458,8 +558,29 @@ class MainActivity : AppCompatActivity() {
             startService(intent)
         }
 
-        updateUiState(true, true)
+        updateUiState(true, MockLocationService.MODE_ROUTE)
         Toast.makeText(this, "Route Mocking started!", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun startRandomMockService() {
+        if (!isMockLocationAllowed()) {
+            Toast.makeText(this, "Please select this app in Developer Options first!", Toast.LENGTH_LONG).show()
+            startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+            return
+        }
+
+        val intent = Intent(this, MockLocationService::class.java).apply {
+            action = MockLocationService.ACTION_START_RANDOM
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+
+        updateUiState(true, MockLocationService.MODE_RANDOM)
+        Toast.makeText(this, "🌍 Random World Cities Mock started! (2 min intervals)", Toast.LENGTH_SHORT).show()
     }
 
     private fun stopMockService() {
@@ -467,14 +588,18 @@ class MainActivity : AppCompatActivity() {
             action = MockLocationService.ACTION_STOP
         }
         startService(intent)
-        updateUiState(false, isRouteMode)
+        updateUiState(false, currentMode)
         Toast.makeText(this, "Mocking stopped. Real GPS restored.", Toast.LENGTH_SHORT).show()
     }
 
-    private fun updateUiState(active: Boolean, route: Boolean) {
+    private fun updateUiState(active: Boolean, mode: Int = currentMode) {
         isMockRunning = active
         if (active) {
-            binding.tvStatusBadge.text = if (route) "ROUTE ACTIVE" else "ACTIVE"
+            binding.tvStatusBadge.text = when (mode) {
+                MockLocationService.MODE_ROUTE -> "ROUTE ACTIVE"
+                MockLocationService.MODE_RANDOM -> "RANDOM ACTIVE"
+                else -> "ACTIVE"
+            }
             binding.tvStatusBadge.setBackgroundColor(Color.parseColor("#065F46"))
             binding.tvStatusBadge.setTextColor(Color.parseColor("#34D399"))
 
@@ -500,7 +625,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-
     private fun updateRouteProgress(
         progress: Int,
         lat: Double,
@@ -521,6 +645,46 @@ class MainActivity : AppCompatActivity() {
             "if (window.updateVehiclePosition) { window.updateVehiclePosition($lat, $lng, $bearing); }",
             null
         )
+    }
+
+    private fun updateRandomCityProgress(
+        cityName: String,
+        countryName: String,
+        flag: String,
+        lat: Double,
+        lng: Double,
+        cityIdx: Int,
+        totalCities: Int,
+        remainingSecs: Int,
+        changed: Boolean
+    ) {
+        binding.tvCityFlag.text = flag
+        binding.tvCityName.text = "$cityName, $countryName"
+        binding.tvCityCoords.text = String.format(Locale.US, "%.6f, %.6f", lat, lng)
+        val m = (remainingSecs.coerceAtLeast(0)) / 60
+        val s = (remainingSecs.coerceAtLeast(0)) % 60
+        binding.tvRandomCountdown.text = "%dm %02ds left".format(m, s)
+        binding.tvCityIndex.text = "City ${cityIdx + 1} of $totalCities"
+        binding.progressRandomTimer.progress = (WorldCityRepository.INTERVAL_SECONDS - remainingSecs).coerceIn(0, WorldCityRepository.INTERVAL_SECONDS)
+
+        if (isMockRunning && currentMode == MockLocationService.MODE_RANDOM) {
+            binding.tvStatusBadge.text = "%dm %02ds".format(m, s)
+        }
+
+        if (changed) {
+            binding.mapWebView.evaluateJavascript("if (window.setCityLocation) { window.setCityLocation($lat, $lng); }", null)
+        }
+    }
+
+    private fun updateRandomCityUi(city: WorldCity, remainingSecs: Int) {
+        binding.tvCityFlag.text = city.flag
+        binding.tvCityName.text = "${city.name}, ${city.country}"
+        binding.tvCityCoords.text = String.format(Locale.US, "%.6f, %.6f", city.lat, city.lng)
+        val m = (remainingSecs.coerceAtLeast(0)) / 60
+        val s = (remainingSecs.coerceAtLeast(0)) % 60
+        binding.tvRandomCountdown.text = "%dm %02ds left".format(m, s)
+        binding.tvCityIndex.text = "City ${WorldCityRepository.currentCityIndex + 1} of ${WorldCityRepository.CITIES.size}"
+        binding.progressRandomTimer.progress = (WorldCityRepository.INTERVAL_SECONDS - remainingSecs).coerceIn(0, WorldCityRepository.INTERVAL_SECONDS)
     }
 
     @SuppressLint("SetJavaScriptEnabled", "ClickableViewAccessibility")
@@ -559,13 +723,13 @@ class MainActivity : AppCompatActivity() {
             @JavascriptInterface
             fun onMapClick(lat: Double, lng: Double) {
                 runOnUiThread {
-                    if (isRouteMode) {
+                    if (currentMode == MockLocationService.MODE_ROUTE) {
                         // In route mode, clicking sets the destination
-                        binding.etRouteTo.setText(String.format(java.util.Locale.US, "%.6f, %.6f", lat, lng))
+                        binding.etRouteTo.setText(String.format(Locale.US, "%.6f, %.6f", lat, lng))
                         triggerBuildRoute()
-                    } else {
-                        binding.etLatitude.setText(String.format(java.util.Locale.US, "%.6f", lat))
-                        binding.etLongitude.setText(String.format(java.util.Locale.US, "%.6f", lng))
+                    } else if (currentMode == MockLocationService.MODE_FIXED) {
+                        binding.etLatitude.setText(String.format(Locale.US, "%.6f", lat))
+                        binding.etLongitude.setText(String.format(Locale.US, "%.6f", lng))
                         if (isMockRunning) {
                             startFixedMockService()
                         }
@@ -601,7 +765,7 @@ class MainActivity : AppCompatActivity() {
                         RouteRepository.setRoute(rawList, summary)
 
                         val speedKmH = ((distanceMeters / totalSeconds.coerceAtLeast(1)) * 3.6).toInt()
-                        val speedDisplay = if (speedKmH == 0) String.format(java.util.Locale.US, "%.1f km/h", (distanceMeters / totalSeconds.coerceAtLeast(1)) * 3.6) else "$speedKmH km/h"
+                        val speedDisplay = if (speedKmH == 0) String.format(Locale.US, "%.1f km/h", (distanceMeters / totalSeconds.coerceAtLeast(1)) * 3.6) else "$speedKmH km/h"
                         binding.tvRouteSummary.text = "Distance: $distText • Avg: $speedDisplay ($durText)"
                         Toast.makeText(this@MainActivity, "Route ready: $distText in $durText", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
@@ -610,7 +774,6 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-
 
             @JavascriptInterface
             fun onRouteError(errorMsg: String) {
@@ -650,181 +813,243 @@ class MainActivity : AppCompatActivity() {
                     }
                     #pac-input:focus {
                         border-color: #6366f1;
-                        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+                        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.4);
                     }
-                    #pac-input::placeholder { color: #94a3b8; }
-                    .pac-container {
-                        background-color: #1e293b !important;
-                        border: 1px solid #475569 !important;
-                        border-radius: 8px !important;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.6) !important;
-                        z-index: 999999 !important;
-                    }
-                    .pac-item {
-                        color: #f8fafc !important;
-                        border-top: 1px solid #334155 !important;
-                        padding: 8px 10px !important;
-                        font-size: 12px !important;
-                    }
-                    .pac-item:hover, .pac-item-selected {
-                        background-color: #334155 !important;
-                    }
-                    .pac-item-query {
-                        color: #38bdf8 !important;
-                        font-weight: bold !important;
-                    }
-                    .map-controls-group {
+                    .custom-zoom-control {
                         position: absolute;
-                        right: 12px;
+                        right: 14px;
                         bottom: 24px;
                         display: flex;
                         flex-direction: column;
-                        z-index: 9999;
+                        gap: 8px;
+                        z-index: 10;
                     }
-                    .map-float-btn {
-                        width: 42px;
-                        height: 42px;
+                    .zoom-btn {
+                        width: 44px;
+                        height: 44px;
                         background: #1e293b;
                         border: 1.5px solid #475569;
-                        border-radius: 10px;
-                        color: #ffffff;
-                        font-size: 20px;
+                        border-radius: 12px;
+                        color: #f8fafc;
+                        font-size: 22px;
                         font-weight: bold;
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        box-shadow: 0 6px 16px rgba(0,0,0,0.6);
-                        margin-bottom: 8px;
+                        box-shadow: 0 6px 14px rgba(0,0,0,0.5);
                         cursor: pointer;
                         user-select: none;
-                        -webkit-user-select: none;
                     }
-                    .map-float-btn:active {
+                    .zoom-btn:active {
                         background: #334155;
-                        transform: scale(0.92);
+                        transform: scale(0.94);
                     }
                 </style>
-                <script src="https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places,geometry"></script>
+                <script src="https://maps.googleapis.com/maps/api/js?key=$apiKey&libraries=places,geometry"></script>
             </head>
             <body>
-                <input id="pac-input" type="text" placeholder="🔍 Search place or address..." />
+                <input id="pac-input" class="controls" type="text" placeholder="🔍 Search place or address..." />
                 <div id="map"></div>
-                <div class="map-controls-group">
-                    <div class="map-float-btn" onclick="zoomIn()">+</div>
-                    <div class="map-float-btn" onclick="zoomOut()">−</div>
-                    <div class="map-float-btn" onclick="recenterMarker()" style="font-size: 16px;">🎯</div>
+
+                <div class="custom-zoom-control">
+                    <div class="zoom-btn" onclick="window.zoomIn()">+</div>
+                    <div class="zoom-btn" onclick="window.zoomOut()">−</div>
+                    <div class="zoom-btn" onclick="window.recenterMarker()" style="font-size: 16px;">🎯</div>
                 </div>
+
                 <script>
                     var map, marker, carMarker, directionsService, directionsRenderer;
-                    var isDragging = false;
                     var isRouteActiveMode = false;
 
+                    var darkMapStyle = [
+                        { "elementType": "geometry", "stylers": [{ "color": "#1d2c4d" }] },
+                        { "elementType": "labels.text.fill", "stylers": [{ "color": "#8ec3b9" }] },
+                        { "elementType": "labels.text.stroke", "stylers": [{ "color": "#1a3646" }] },
+                        {
+                            "featureType": "administrative.country",
+                            "elementType": "geometry.stroke",
+                            "stylers": [{ "color": "#4b6878" }]
+                        },
+                        {
+                            "featureType": "administrative.province",
+                            "elementType": "geometry.stroke",
+                            "stylers": [{ "color": "#4b6878" }]
+                        },
+                        {
+                            "featureType": "landscape.man_made",
+                            "elementType": "geometry.stroke",
+                            "stylers": [{ "color": "#334e87" }]
+                        },
+                        {
+                            "featureType": "landscape.natural",
+                            "elementType": "geometry",
+                            "stylers": [{ "color": "#021019" }]
+                        },
+                        {
+                            "featureType": "poi",
+                            "elementType": "geometry",
+                            "stylers": [{ "color": "#283d6a" }]
+                        },
+                        {
+                            "featureType": "poi",
+                            "elementType": "labels.text.fill",
+                            "stylers": [{ "color": "#6f9ba5" }]
+                        },
+                        {
+                            "featureType": "poi",
+                            "elementType": "labels.text.stroke",
+                            "stylers": [{ "color": "#1d2c4d" }]
+                        },
+                        {
+                            "featureType": "road",
+                            "elementType": "geometry",
+                            "stylers": [{ "color": "#304a7d" }]
+                        },
+                        {
+                            "featureType": "road",
+                            "elementType": "labels.text.fill",
+                            "stylers": [{ "color": "#98a5be" }]
+                        },
+                        {
+                            "featureType": "road",
+                            "elementType": "labels.text.stroke",
+                            "stylers": [{ "color": "#1d2c4d" }]
+                        },
+                        {
+                            "featureType": "road.highway",
+                            "elementType": "geometry",
+                            "stylers": [{ "color": "#2c6675" }]
+                        },
+                        {
+                            "featureType": "road.highway",
+                            "elementType": "geometry.stroke",
+                            "stylers": [{ "color": "#255e63" }]
+                        },
+                        {
+                            "featureType": "road.highway",
+                            "elementType": "labels.text.fill",
+                            "stylers": [{ "color": "#b0d5ce" }]
+                        },
+                        {
+                            "featureType": "road.highway",
+                            "elementType": "labels.text.stroke",
+                            "stylers": [{ "color": "#023e58" }]
+                        },
+                        {
+                            "featureType": "transit",
+                            "elementType": "labels.text.fill",
+                            "stylers": [{ "color": "#98a5be" }]
+                        },
+                        {
+                            "featureType": "transit",
+                            "elementType": "labels.text.stroke",
+                            "stylers": [{ "color": "#1d2c4d" }]
+                        },
+                        {
+                            "featureType": "transit.line",
+                            "elementType": "geometry.fill",
+                            "stylers": [{ "color": "#283d6a" }]
+                        },
+                        {
+                            "featureType": "transit.station",
+                            "elementType": "geometry",
+                            "stylers": [{ "color": "#3a4762" }]
+                        },
+                        {
+                            "featureType": "water",
+                            "elementType": "geometry",
+                            "stylers": [{ "color": "#0e1626" }]
+                        },
+                        {
+                            "featureType": "water",
+                            "elementType": "labels.text.fill",
+                            "stylers": [{ "color": "#4e6d70" }]
+                        }
+                    ];
+
                     function initMap() {
-                        var startPos = { lat: $initialLat, lng: $initialLng };
+                        var initialPos = { lat: $initialLat, lng: $initialLng };
+
                         map = new google.maps.Map(document.getElementById('map'), {
-                            center: startPos,
-                            zoom: 15,
+                            center: initialPos,
+                            zoom: 14,
+                            styles: darkMapStyle,
                             disableDefaultUI: true,
-                            clickableIcons: false,
-                            gestureHandling: 'greedy',
-                            draggable: true,
-                            styles: [
-                                { "elementType": "geometry", "stylers": [{ "color": "#242f3e" }] },
-                                { "elementType": "labels.text.fill", "stylers": [{ "color": "#746855" }] },
-                                { "elementType": "labels.text.stroke", "stylers": [{ "color": "#242f3e" }] },
-                                { "featureType": "administrative.locality", "elementType": "labels.text.fill", "stylers": [{ "color": "#d59563" }] },
-                                { "featureType": "poi", "elementType": "labels.text.fill", "stylers": [{ "color": "#d59563" }] },
-                                { "featureType": "road", "elementType": "geometry", "stylers": [{ "color": "#38414e" }] },
-                                { "featureType": "road", "elementType": "geometry.stroke", "stylers": [{ "color": "#212a37" }] },
-                                { "featureType": "road", "elementType": "labels.text.fill", "stylers": [{ "color": "#9ca5b3" }] },
-                                { "featureType": "road.highway", "elementType": "geometry", "stylers": [{ "color": "#746855" }] },
-                                { "featureType": "road.highway", "elementType": "geometry.stroke", "stylers": [{ "color": "#1f2835" }] },
-                                { "featureType": "transit", "elementType": "geometry", "stylers": [{ "color": "#2f3948" }] },
-                                { "featureType": "water", "elementType": "geometry", "stylers": [{ "color": "#17263c" }] }
-                            ]
+                            gestureHandling: 'greedy'
                         });
 
                         marker = new google.maps.Marker({
-                            position: startPos,
+                            position: initialPos,
                             map: map,
                             draggable: true,
                             animation: google.maps.Animation.DROP
                         });
 
-                        // Navigation vehicle arrow marker
                         var carIcon = {
                             path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
                             scale: 6,
-                            fillColor: '#38bdf8',
+                            fillColor: "#38BDF8",
                             fillOpacity: 1,
                             strokeWeight: 2,
-                            strokeColor: '#ffffff',
+                            strokeColor: "#FFFFFF",
                             rotation: 0
                         };
+
                         carMarker = new google.maps.Marker({
-                            position: startPos,
+                            position: initialPos,
                             map: map,
                             icon: carIcon,
-                            visible: false
+                            visible: false,
+                            zIndex: 999
                         });
 
-                        // Directions Service & Renderer
                         directionsService = new google.maps.DirectionsService();
                         directionsRenderer = new google.maps.DirectionsRenderer({
                             map: map,
                             suppressMarkers: false,
                             polylineOptions: {
-                                strokeColor: '#38bdf8',
+                                strokeColor: '#38BDF8',
                                 strokeWeight: 6,
-                                strokeOpacity: 0.9
+                                strokeOpacity: 0.85
                             }
                         });
 
+                        var input = document.getElementById('pac-input');
+                        var searchBox = new google.maps.places.SearchBox(input);
+                        map.controls[google.maps.ControlPosition.TOP_CENTER].push(input);
+
+                        map.addListener('bounds_changed', function() {
+                            searchBox.setBounds(map.getBounds());
+                        });
+
                         function notifyApp(lat, lng) {
-                            if (window.AndroidBridge) {
+                            if (window.AndroidBridge && window.AndroidBridge.onMapClick) {
                                 window.AndroidBridge.onMapClick(lat, lng);
                             }
                         }
 
-                        map.addListener('dragstart', function() {
-                            isDragging = true;
-                        });
-
-                        map.addListener('dragend', function() {
-                            setTimeout(function() {
-                                isDragging = false;
-                            }, 150);
-                        });
-
-                        map.addListener('click', function(e) {
-                            if (isDragging) return;
-                            var lat = e.latLng.lat();
-                            var lng = e.latLng.lng();
+                        map.addListener('click', function(event) {
+                            var lat = event.latLng.lat();
+                            var lng = event.latLng.lng();
                             if (!isRouteActiveMode) {
-                                marker.setPosition(e.latLng);
+                                marker.setPosition(event.latLng);
                             }
                             notifyApp(lat, lng);
                         });
 
-                        marker.addListener('dragend', function(e) {
-                            var lat = e.latLng.lat();
-                            var lng = e.latLng.lng();
-                            notifyApp(lat, lng);
+                        marker.addListener('dragend', function(event) {
+                            notifyApp(event.latLng.lat(), event.latLng.lng());
                         });
 
-                        // Setup Places Autocomplete Search Box
-                        var input = document.getElementById('pac-input');
-                        map.controls[google.maps.ControlPosition.TOP_CENTER].push(input);
-                        var autocomplete = new google.maps.places.Autocomplete(input);
-                        autocomplete.bindTo('bounds', map);
-                        autocomplete.addListener('place_changed', function() {
-                            var place = autocomplete.getPlace();
-                            if (!place.geometry || !place.geometry.location) {
-                                return;
-                            }
+                        searchBox.addListener('places_changed', function() {
+                            var places = searchBox.getPlaces();
+                            if (places.length == 0) return;
+                            var place = places[0];
+                            if (!place.geometry || !place.geometry.location) return;
+
                             var loc = place.geometry.location;
-                            map.panTo(loc);
-                            map.setZoom(16);
+                            map.setCenter(loc);
+                            map.setZoom(15);
                             if (!isRouteActiveMode) {
                                 marker.setPosition(loc);
                             }
@@ -837,14 +1062,24 @@ class MainActivity : AppCompatActivity() {
                             map.panTo(newPos);
                         };
 
+                        window.setCityLocation = function(lat, lng) {
+                            var newPos = { lat: lat, lng: lng };
+                            marker.setPosition(newPos);
+                            marker.setVisible(true);
+                            if (carMarker) carMarker.setVisible(false);
+                            if (directionsRenderer) directionsRenderer.set('directions', null);
+                            map.panTo(newPos);
+                            map.setZoom(12);
+                        };
+
                         window.setRouteMode = function(isRoute) {
                             isRouteActiveMode = isRoute;
                             if (isRoute) {
                                 marker.setVisible(false);
                             } else {
                                 marker.setVisible(true);
-                                carMarker.setVisible(false);
-                                directionsRenderer.set('directions', null);
+                                if (carMarker) carMarker.setVisible(false);
+                                if (directionsRenderer) directionsRenderer.set('directions', null);
                             }
                         };
 
@@ -852,8 +1087,10 @@ class MainActivity : AppCompatActivity() {
                             var pos = { lat: lat, lng: lng };
                             carMarker.setPosition(pos);
                             var icon = carMarker.getIcon();
-                            icon.rotation = bearing;
-                            carMarker.setIcon(icon);
+                            if (icon) {
+                                icon.rotation = bearing;
+                                carMarker.setIcon(icon);
+                            }
                             carMarker.setVisible(true);
                         };
 
@@ -932,9 +1169,9 @@ class MainActivity : AppCompatActivity() {
                         };
 
                         window.recenterMarker = function() {
-                            if (isRouteActiveMode) {
+                            if (isRouteActiveMode && carMarker && carMarker.getVisible()) {
                                 map.panTo(carMarker.getPosition());
-                            } else {
+                            } else if (marker && marker.getPosition()) {
                                 map.panTo(marker.getPosition());
                             }
                         };
