@@ -88,6 +88,7 @@ object RouteRepository {
 
     @Synchronized
     fun saveToDisk(context: Context) {
+        if (rawVertices.size < 2) return
         try {
             val file = File(context.filesDir, "active_route.json")
             val root = JSONObject()

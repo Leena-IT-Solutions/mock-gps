@@ -95,8 +95,8 @@ class MockLocationService : Service() {
             return START_STICKY
         }
 
-        if (intent == null) {
-            // Service restarted by Android OS (e.g. low memory recovery or 24/7 background keep-alive)
+        if (intent == null || action == ACTION_RESUME) {
+            // Service restarted by Android OS, BootReceiver, or onTaskRemoved alarm
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val wasMocking = prefs.getBoolean(KEY_IS_MOCKING, false)
             if (!wasMocking) {
@@ -110,13 +110,26 @@ class MockLocationService : Service() {
             currentSpeed = prefs.getFloat(KEY_SPEED, 0f)
 
             if (mockMode == MODE_ROUTE) {
-                RouteRepository.loadFromDisk(this)
-                RouteRepository.currentIndex = prefs.getInt(KEY_ROUTE_INDEX, 0)
+                if (RouteRepository.getPoints().isEmpty()) {
+                    RouteRepository.loadFromDisk(this)
+                }
+                val savedIdx = prefs.getInt(KEY_ROUTE_INDEX, RouteRepository.currentIndex)
+                val maxIdx = (RouteRepository.getPoints().size - 1).coerceAtLeast(0)
+                RouteRepository.currentIndex = savedIdx.coerceIn(0, maxIdx)
                 RouteRepository.isRouteActive = true
+                WorldCityRepository.isRandomActive = false
+                RouteRepository.getCurrentPoint()?.let { pt ->
+                    targetLatitude = pt.lat
+                    targetLongitude = pt.lng
+                    currentBearing = pt.bearing
+                    currentSpeed = pt.speed
+                }
             } else if (mockMode == MODE_RANDOM) {
                 val cityIdx = prefs.getInt(KEY_RANDOM_CITY_INDEX, 0)
                 WorldCityRepository.setCityByIndex(cityIdx)
                 randomSecondsRemaining = prefs.getInt(KEY_RANDOM_SECS_REMAINING, WorldCityRepository.INTERVAL_SECONDS)
+                    .coerceIn(1, WorldCityRepository.INTERVAL_SECONDS)
+                WorldCityRepository.secondsRemaining = randomSecondsRemaining
                 val city = WorldCityRepository.getCurrentCity()
                 targetLatitude = city.lat
                 targetLongitude = city.lng
@@ -124,7 +137,11 @@ class MockLocationService : Service() {
                 currentCityCountry = city.country
                 currentCityFlag = city.flag
                 currentRemainingSecs = randomSecondsRemaining
+                RouteRepository.isRouteActive = false
                 WorldCityRepository.isRandomActive = true
+            } else {
+                RouteRepository.isRouteActive = false
+                WorldCityRepository.isRandomActive = false
             }
         } else {
             when (action) {
@@ -145,9 +162,13 @@ class MockLocationService : Service() {
                 }
                 ACTION_START_ROUTE -> {
                     mockMode = MODE_ROUTE
+                    if (RouteRepository.getPoints().isEmpty()) {
+                        RouteRepository.loadFromDisk(this)
+                    } else {
+                        RouteRepository.saveToDisk(this)
+                    }
                     RouteRepository.isRouteActive = true
                     WorldCityRepository.isRandomActive = false
-                    RouteRepository.saveToDisk(this)
                     val firstPoint = RouteRepository.getCurrentPoint()
                     if (firstPoint != null) {
                         targetLatitude = firstPoint.lat
@@ -712,15 +733,8 @@ class MockLocationService : Service() {
         if (isMocking) {
             saveState()
             try {
-                val restartAction = when (mockMode) {
-                    MODE_RANDOM -> ACTION_START_RANDOM
-                    MODE_ROUTE -> ACTION_START_ROUTE
-                    else -> ACTION_START
-                }
                 val restartIntent = Intent(applicationContext, MockLocationService::class.java).apply {
-                    action = restartAction
-                    putExtra(EXTRA_LATITUDE, targetLatitude)
-                    putExtra(EXTRA_LONGITUDE, targetLongitude)
+                    action = ACTION_RESUME
                 }
                 val pendingIntent = PendingIntent.getService(
                     applicationContext,
@@ -774,6 +788,7 @@ class MockLocationService : Service() {
         const val ACTION_START = "com.lits.mocklocation.ACTION_START"
         const val ACTION_START_ROUTE = "com.lits.mocklocation.ACTION_START_ROUTE"
         const val ACTION_START_RANDOM = "com.lits.mocklocation.ACTION_START_RANDOM"
+        const val ACTION_RESUME = "com.lits.mocklocation.ACTION_RESUME"
         const val ACTION_NEXT_RANDOM_CITY = "com.lits.mocklocation.ACTION_NEXT_RANDOM_CITY"
         const val ACTION_STOP = "com.lits.mocklocation.ACTION_STOP"
         const val ACTION_STATUS_CHANGED = "com.lits.mocklocation.ACTION_STATUS_CHANGED"

@@ -23,6 +23,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.lits.mocklocation.databinding.ActivityMainBinding
 import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
@@ -493,7 +494,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.tvRouteSummary.text = "Calculating driving route..."
-        binding.mapWebView.evaluateJavascript("if (window.buildRoute) { window.buildRoute('$from', '$to', $selectedDurationMinutes); }", null)
+        val safeFrom = JSONObject.quote(from)
+        val safeTo = JSONObject.quote(to)
+        binding.mapWebView.evaluateJavascript("if (window.buildRoute) { window.buildRoute($safeFrom, $safeTo, $selectedDurationMinutes); }", null)
     }
 
     private fun setCoordinates(lat: Double, lng: Double) {
@@ -768,6 +771,10 @@ class MainActivity : AppCompatActivity() {
                         val speedDisplay = if (speedKmH == 0) String.format(Locale.US, "%.1f km/h", (distanceMeters / totalSeconds.coerceAtLeast(1)) * 3.6) else "$speedKmH km/h"
                         binding.tvRouteSummary.text = "Distance: $distText • Avg: $speedDisplay ($durText)"
                         Toast.makeText(this@MainActivity, "Route ready: $distText in $durText", Toast.LENGTH_SHORT).show()
+
+                        if (isMockRunning && currentMode == MockLocationService.MODE_ROUTE) {
+                            startRouteMockService()
+                        }
                     } catch (e: Exception) {
                         e.printStackTrace()
                         binding.tvRouteSummary.text = "Error parsing route points"
@@ -786,7 +793,7 @@ class MainActivity : AppCompatActivity() {
 
         val initialLat = binding.etLatitude.text.toString().toDoubleOrNull() ?: 19.1989
         val initialLng = binding.etLongitude.text.toString().toDoubleOrNull() ?: 73.1918
-        val apiKey = "AIzaSyBwYyZdXko52rrcTzFptPFRNMySD5_yGQQ"
+        val apiKey = BuildConfig.MAPS_API_KEY
 
         val mapHtml = """
             <!DOCTYPE html>

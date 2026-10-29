@@ -15,11 +15,8 @@ class BootReceiver : BroadcastReceiver() {
             val prefs = context.getSharedPreferences(MockLocationService.PREFS_NAME, Context.MODE_PRIVATE)
             val wasMocking = prefs.getBoolean(MockLocationService.KEY_IS_MOCKING, false)
             if (wasMocking) {
-                val isRoute = prefs.getBoolean(MockLocationService.KEY_IS_ROUTE_MODE, false)
                 val serviceIntent = Intent(context, MockLocationService::class.java).apply {
-                    this.action = if (isRoute) MockLocationService.ACTION_START_ROUTE else MockLocationService.ACTION_START
-                    putExtra(MockLocationService.EXTRA_LATITUDE, prefs.getFloat(MockLocationService.KEY_TARGET_LAT, 19.1989f).toDouble())
-                    putExtra(MockLocationService.EXTRA_LONGITUDE, prefs.getFloat(MockLocationService.KEY_TARGET_LNG, 73.1918f).toDouble())
+                    this.action = MockLocationService.ACTION_RESUME
                 }
                 try {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
